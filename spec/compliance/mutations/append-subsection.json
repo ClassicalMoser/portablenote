@@ -1,0 +1,20 @@
+{
+  "description": "AppendSubsection: add a block as a subsection under an existing section",
+  "initial_vault": "../valid/with-documents",
+  "command": {
+    "type": "AppendSubsection",
+    "base_version": 1,
+    "payload": {
+      "document_id": "d0000000-0000-4000-a000-000000000001",
+      "section_block_id": "30000000-0000-4000-a000-000000000002",
+      "block_id": "30000000-0000-4000-a000-000000000001"
+    }
+  },
+  "expected": {
+    "result": "success",
+    "assertions": [
+      { "type": "document_subsection_count", "document_id": "d0000000-0000-4000-a000-000000000001", "section_block_id": "30000000-0000-4000-a000-000000000002", "count": 1 },
+      { "type": "event_emitted", "event": "SectionAppended", "document_id": "d0000000-0000-4000-a000-000000000001" }
+    ]
+  }
+}

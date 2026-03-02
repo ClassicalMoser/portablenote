@@ -1,0 +1,25 @@
+{
+  "description": "RenameBlock: rename 'Getting Started' to 'Quick Start', verify propagation to inline refs and footer annotations in referencing blocks",
+  "initial_vault": "../valid/with-refs",
+  "command": {
+    "type": "RenameBlock",
+    "base_version": 1,
+    "payload": {
+      "block_id": "20000000-0000-4000-a000-000000000002",
+      "new_name": "Quick Start"
+    }
+  },
+  "expected": {
+    "result": "success",
+    "assertions": [
+      { "type": "block_name_is", "block_id": "20000000-0000-4000-a000-000000000002", "name": "Quick Start" },
+      { "type": "name_index_contains", "name": "Quick Start", "block_id": "20000000-0000-4000-a000-000000000002" },
+      { "type": "name_index_missing", "name": "Getting Started" },
+      { "type": "block_content_contains", "block_id": "20000000-0000-4000-a000-000000000001", "text": "[[Quick Start]]" },
+      { "type": "block_content_not_contains", "block_id": "20000000-0000-4000-a000-000000000001", "text": "[[Getting Started]]" },
+      { "type": "block_footer_maps", "block_id": "20000000-0000-4000-a000-000000000001", "name": "Quick Start", "target_uuid": "20000000-0000-4000-a000-000000000002" },
+      { "type": "edge_count", "count": 2 },
+      { "type": "event_emitted", "event": "BlockRenamed", "block_id": "20000000-0000-4000-a000-000000000002" }
+    ]
+  }
+}

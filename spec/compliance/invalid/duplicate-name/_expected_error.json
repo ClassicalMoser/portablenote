@@ -1,0 +1,11 @@
+{
+  "invariant": 7,
+  "description": "Two blocks share the same name",
+  "details": {
+    "name": "Duplicate Name",
+    "block_ids": [
+      "51000000-0000-4000-a000-000000000001",
+      "51000000-0000-4000-a000-000000000002"
+    ]
+  }
+}

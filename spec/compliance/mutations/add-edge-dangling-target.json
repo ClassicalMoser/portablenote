@@ -1,0 +1,17 @@
+{
+  "description": "AddEdge: rejected when target block does not exist in heap",
+  "initial_vault": "../valid/minimal",
+  "command": {
+    "type": "AddEdge",
+    "base_version": 1,
+    "payload": {
+      "id": "e0000000-0000-4000-a000-000000000098",
+      "source": "10000000-0000-4000-a000-000000000001",
+      "target": "99999999-0000-4000-a000-000000000099"
+    }
+  },
+  "expected": {
+    "result": "rejected",
+    "error": "Target block 99999999-0000-4000-a000-000000000099 does not exist in heap"
+  }
+}

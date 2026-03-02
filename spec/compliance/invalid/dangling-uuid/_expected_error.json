@@ -1,0 +1,9 @@
+{
+  "invariant": 1,
+  "description": "Edge target UUID does not exist in heap",
+  "details": {
+    "edge_id": "e0000000-0000-4000-a000-000000000010",
+    "dangling_uuid": "99999999-0000-4000-a000-000000000099",
+    "field": "target"
+  }
+}

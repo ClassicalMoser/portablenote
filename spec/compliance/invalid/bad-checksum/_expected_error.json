@@ -1,0 +1,8 @@
+{
+  "invariant": 10,
+  "description": "Manifest checksum does not match computed checksum of source artifacts",
+  "details": {
+    "manifest_checksum": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "note": "Checksum mismatch is advisory per spec — implementations should revalidate and re-sign rather than reject. This fixture tests that mismatch is detected."
+  }
+}

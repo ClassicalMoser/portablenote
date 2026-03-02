@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PortableNote Document Definition",
+  "description": "An optional view over the block heap. Ordered composition of named blocks with two levels of hierarchy (sections and subsections).",
+  "type": "object",
+  "required": ["id", "root", "sections"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Permanent document identity. UUID v4."
+    },
+    "root": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Root block UUID. Block's name is the document title. Renders as h1."
+    },
+    "sections": {
+      "type": "array",
+      "description": "Ordered top-level sections. Each section is a block rendering at h2.",
+      "items": {
+        "$ref": "#/$defs/section"
+      }
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": "object",
+      "required": ["block", "subsections"],
+      "additionalProperties": false,
+      "properties": {
+        "block": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Section block UUID. Must exist in heap. Renders at h2."
+        },
+        "subsections": {
+          "type": "array",
+          "description": "Ordered subsection blocks. Each renders at h3. Max one level deep.",
+          "items": {
+            "$ref": "#/$defs/subsection"
+          }
+        }
+      }
+    },
+    "subsection": {
+      "type": "object",
+      "required": ["block"],
+      "additionalProperties": false,
+      "properties": {
+        "block": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Subsection block UUID. Must exist in heap. Renders at h3."
+        }
+      }
+    }
+  }
+}

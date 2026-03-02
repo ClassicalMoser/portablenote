@@ -84,7 +84,7 @@ Declares vault identity, spec version, content format, integrity checksum, and t
 | `checksum` | string | SHA-256 over canonical serialization of all source artifacts. Prefixed `sha256:`. |
 | `names` | object | Vault-wide name index. Maps every block `name` to its UUID. Updated on every `AddBlock`, `RenameBlock`, and `DeleteBlock`. |
 
-The `names` index is the authoritative name → UUID lookup. It is not included in the checksum computation — it is derived from block frontmatter and can be reconstructed by scanning `/blocks` if needed.
+The `names` index is the authoritative name → UUID lookup. It is not included in the checksum computation — it is derived from block metadata and can be reconstructed by scanning `/blocks` if needed.
 
 ### Checksum Computation
 
@@ -118,20 +118,20 @@ When a heading is encountered during parsing, it ends the current block and begi
 
 For the Markdown format: `/blocks/a3f9b2c1-....md`
 
-### Block Frontmatter
+### Block Metadata
 
-Every block file begins with a YAML frontmatter header:
+Every block file begins with a metadata header inside an HTML comment. This ensures metadata is invisible in any CommonMark-compliant renderer — a block file opened in any markdown viewer shows only the author's content.
 
-```yaml
----
+```markdown
+<!--
 id: <uuid-v4>
 name: <human-readable name>
 created: <iso8601>
 modified: <iso8601>
----
+-->
 ```
 
-Content follows immediately after the closing `---`. Additional frontmatter fields are permitted and preserved verbatim — they are implementation-defined and treated as opaque metadata.
+The metadata is YAML inside an HTML comment. Content follows immediately after the closing `-->`. Additional metadata fields are permitted and preserved verbatim — they are implementation-defined and treated as opaque metadata.
 
 ### Fields
 
@@ -173,10 +173,10 @@ Inline references use the human-readable `name`, never the UUID. References are 
 Every inline reference in a block's content must have a corresponding footer annotation mapping the name to the target UUID. Footer annotations are the bridge between human-readable content and the graph.
 
 ```markdown
----
+<!--
 id: a3f9b2c1-...
 name: My Analysis
----
+-->
 
 See also [[Getting Started]] for context. This [[Key Insight]] elaborates further.
 
@@ -314,7 +314,7 @@ Name propagations from renames that occurred since `base_version` are corrected 
 
 | Command | Description | Validates |
 |---|---|---|
-| `AddBlock` | Add a new block file to `/blocks`. | UUID unique, name unique, frontmatter complete. |
+| `AddBlock` | Add a new block file to `/blocks`. | UUID unique, name unique, metadata complete. |
 | `RenameBlock` | Change a block's `name`. Propagates to all inline refs and footer annotations vault-wide. | Block exists, new name unique vault-wide. |
 | `MutateBlockContent` | Update block content. Updates `modified` timestamp. | Block exists, content valid for declared format, no heading syntax outside fenced code. |
 | `DeleteBlock(safe)` | Delete block. Fails if incoming reference edges exist. | No incoming edges in `block-graph.json`. |
@@ -374,7 +374,7 @@ These invariants must hold after every mutation. Conforming implementations enfo
 5. Every `[[Name]]` inline reference in any block's content has a corresponding footer annotation and a corresponding edge in `block-graph.json`.
 6. Every footer annotation maps to a name that resolves to an existing block in the heap.
 7. Block names are vault-wide unique. No two blocks share a `name` at any time.
-8. Every block file UUID matches its frontmatter `id` field.
+8. Every block file UUID matches its metadata `id` field.
 9. No block content contains heading syntax (h1–h6) outside fenced code blocks when format is `"markdown"`.
 10. The manifest checksum reflects the current state of all source artifacts.
 
@@ -401,9 +401,9 @@ On name collision during import, a numeric suffix is appended automatically.
 
 `[[Page Name]]` wikilinks are resolved to block names where possible. A resolved wikilink becomes `[[Block Name]]` with a footer annotation mapping the name to the target UUID and a corresponding edge added to `block-graph.json`. Unresolvable wikilinks are preserved as plain text with a warning emitted.
 
-### Frontmatter Mapping
+### Metadata Mapping
 
-Existing YAML frontmatter fields not recognized by the spec are preserved in the block's frontmatter verbatim.
+Existing metadata fields not recognized by the spec are preserved in the block's metadata comment verbatim.
 
 ---
 
@@ -553,7 +553,7 @@ The specification can be maintained and versioned **separately** from any implem
 - **JSON schemas** — for `manifest.json`, document definitions, and `block-graph.json`, so that any implementation can validate artifact shape.
 - **Compliance test suite** — runnable tests that any domain implementation can execute against:
   - **Valid vaults** — load and satisfy invariants; no errors.
-  - **Invalid vaults** — load and reject or remediate as specified (dangling UUIDs, duplicate names, malformed frontmatter, etc.).
+  - **Invalid vaults** — load and reject or remediate as specified (dangling UUIDs, duplicate names, malformed metadata, etc.).
   - **Mutation scenarios** — given initial vault state and a command, assert expected outcome (success + resulting state, or rejection with specified error).
 
 Implementations (including the reference core) depend on the spec as a dependency or submodule: they run the compliance suite in CI and treat the schemas as the contract for persistence. The spec repo does not contain engine or UI code — only documentation, schemas, and tests.

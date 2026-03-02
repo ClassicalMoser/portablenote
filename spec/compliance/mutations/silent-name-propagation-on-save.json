@@ -1,0 +1,34 @@
+{
+  "description": "Silent name propagation: block content contains stale [[Getting Started]] after target was renamed to 'Quick Start'. On save, the server silently corrects the inline ref and footer annotation. Not a conflict.",
+  "initial_vault": "../valid/with-refs",
+  "preconditions": [
+    {
+      "description": "RenameBlock 'Getting Started' to 'Quick Start' has already occurred, bumping vault version to 2",
+      "command": {
+        "type": "RenameBlock",
+        "base_version": 1,
+        "payload": {
+          "block_id": "20000000-0000-4000-a000-000000000002",
+          "new_name": "Quick Start"
+        }
+      }
+    }
+  ],
+  "command": {
+    "type": "MutateBlockContent",
+    "base_version": 1,
+    "payload": {
+      "block_id": "20000000-0000-4000-a000-000000000001",
+      "content": "This block covers the core concepts. For newcomers, see [[Getting Started]]. For deeper material, see [[Advanced Topics]]."
+    }
+  },
+  "expected": {
+    "result": "success",
+    "assertions": [
+      { "type": "block_content_contains", "block_id": "20000000-0000-4000-a000-000000000001", "text": "[[Quick Start]]" },
+      { "type": "block_content_not_contains", "block_id": "20000000-0000-4000-a000-000000000001", "text": "[[Getting Started]]" },
+      { "type": "block_footer_maps", "block_id": "20000000-0000-4000-a000-000000000001", "name": "Quick Start", "target_uuid": "20000000-0000-4000-a000-000000000002" },
+      { "type": "no_event", "event": "SaveConflict" }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "description": "RemoveEdge: remove an existing edge by UUID",
+  "initial_vault": "../valid/with-refs",
+  "command": {
+    "type": "RemoveEdge",
+    "base_version": 1,
+    "payload": {
+      "edge_id": "e0000000-0000-4000-a000-000000000001"
+    }
+  },
+  "expected": {
+    "result": "success",
+    "assertions": [
+      { "type": "edge_not_exists", "edge_id": "e0000000-0000-4000-a000-000000000001" },
+      { "type": "edge_count", "count": 1 },
+      { "type": "event_emitted", "event": "EdgeRemoved", "edge_id": "e0000000-0000-4000-a000-000000000001" }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "invariant": 9,
+  "description": "Block content contains heading syntax outside fenced code block",
+  "details": {
+    "block_id": "52000000-0000-4000-a000-000000000001",
+    "heading_text": "This Heading Should Not Be Here",
+    "heading_level": 2
+  }
+}

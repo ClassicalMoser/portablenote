@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PortableNote Block Reference Graph",
+  "description": "Typed directed edges between block UUIDs. The canonical knowledge structure.",
+  "type": "object",
+  "required": ["version", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+",
+      "description": "Graph schema version. Matches spec_version."
+    },
+    "edges": {
+      "type": "array",
+      "description": "Unordered list of directed edges between blocks.",
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    }
+  },
+  "$defs": {
+    "edge": {
+      "type": "object",
+      "required": ["id", "source", "target"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Permanent edge identity. UUID v4."
+        },
+        "source": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Source block UUID. Must exist in heap."
+        },
+        "target": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Target block UUID. Must exist in heap."
+        }
+      }
+    }
+  }
+}

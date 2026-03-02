@@ -1,0 +1,21 @@
+{
+  "description": "DeleteBlock(safe): succeeds on orphan block with no edges",
+  "initial_vault": "../valid/with-orphans",
+  "command": {
+    "type": "DeleteBlock",
+    "base_version": 1,
+    "payload": {
+      "block_id": "40000000-0000-4000-a000-000000000003",
+      "mode": "safe"
+    }
+  },
+  "expected": {
+    "result": "success",
+    "assertions": [
+      { "type": "block_not_exists", "block_id": "40000000-0000-4000-a000-000000000003" },
+      { "type": "name_index_missing", "name": "Orphan Block" },
+      { "type": "block_count", "count": 2 },
+      { "type": "event_emitted", "event": "BlockDeleted", "block_id": "40000000-0000-4000-a000-000000000003" }
+    ]
+  }
+}

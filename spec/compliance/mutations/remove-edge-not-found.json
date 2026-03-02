@@ -1,0 +1,15 @@
+{
+  "description": "RemoveEdge: rejected when edge UUID does not exist",
+  "initial_vault": "../valid/minimal",
+  "command": {
+    "type": "RemoveEdge",
+    "base_version": 1,
+    "payload": {
+      "edge_id": "99999999-0000-4000-a000-000000000099"
+    }
+  },
+  "expected": {
+    "result": "rejected",
+    "error": "Edge 99999999-0000-4000-a000-000000000099 does not exist"
+  }
+}

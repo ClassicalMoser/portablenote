@@ -1,0 +1,21 @@
+{
+  "description": "RemoveSection: remove a section from a document, does not delete blocks",
+  "initial_vault": "../valid/with-documents",
+  "command": {
+    "type": "RemoveSection",
+    "base_version": 1,
+    "payload": {
+      "document_id": "d0000000-0000-4000-a000-000000000001",
+      "block_id": "30000000-0000-4000-a000-000000000003"
+    }
+  },
+  "expected": {
+    "result": "success",
+    "assertions": [
+      { "type": "document_section_count", "document_id": "d0000000-0000-4000-a000-000000000001", "count": 1 },
+      { "type": "block_exists", "block_id": "30000000-0000-4000-a000-000000000003" },
+      { "type": "block_exists", "block_id": "30000000-0000-4000-a000-000000000004" },
+      { "type": "event_emitted", "event": "SectionRemoved", "document_id": "d0000000-0000-4000-a000-000000000001" }
+    ]
+  }
+}

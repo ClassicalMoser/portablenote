@@ -1,0 +1,21 @@
+{
+  "description": "AddEdge: create a new reference edge between two existing blocks",
+  "initial_vault": "../valid/with-orphans",
+  "command": {
+    "type": "AddEdge",
+    "base_version": 1,
+    "payload": {
+      "id": "e0000000-0000-4000-a000-000000000099",
+      "source": "40000000-0000-4000-a000-000000000001",
+      "target": "40000000-0000-4000-a000-000000000003"
+    }
+  },
+  "expected": {
+    "result": "success",
+    "assertions": [
+      { "type": "edge_exists", "edge_id": "e0000000-0000-4000-a000-000000000099" },
+      { "type": "edge_count", "count": 2 },
+      { "type": "event_emitted", "event": "EdgeAdded", "edge_id": "e0000000-0000-4000-a000-000000000099" }
+    ]
+  }
+}

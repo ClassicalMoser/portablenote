@@ -1,0 +1,19 @@
+{
+  "description": "SaveConflict: command rejected because base_version is stale (artifact was modified since client loaded it)",
+  "initial_vault": "../valid/minimal",
+  "command": {
+    "type": "MutateBlockContent",
+    "base_version": 0,
+    "payload": {
+      "block_id": "10000000-0000-4000-a000-000000000001",
+      "content": "This was written against a stale version."
+    }
+  },
+  "expected": {
+    "result": "conflict",
+    "assertions": [
+      { "type": "event_emitted", "event": "SaveConflict" },
+      { "type": "block_content_unchanged", "block_id": "10000000-0000-4000-a000-000000000001" }
+    ]
+  }
+}

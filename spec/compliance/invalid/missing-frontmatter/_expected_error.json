@@ -1,0 +1,8 @@
+{
+  "invariant": null,
+  "description": "Block metadata missing required 'name' field",
+  "details": {
+    "block_id": "54000000-0000-4000-a000-000000000001",
+    "missing_field": "name"
+  }
+}

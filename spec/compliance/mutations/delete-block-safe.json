@@ -1,0 +1,16 @@
+{
+  "description": "DeleteBlock(safe): rejected when block has incoming reference edges",
+  "initial_vault": "../valid/with-refs",
+  "command": {
+    "type": "DeleteBlock",
+    "base_version": 1,
+    "payload": {
+      "block_id": "20000000-0000-4000-a000-000000000002",
+      "mode": "safe"
+    }
+  },
+  "expected": {
+    "result": "rejected",
+    "error": "Block has 1 incoming edge(s); use cascade to force deletion"
+  }
+}

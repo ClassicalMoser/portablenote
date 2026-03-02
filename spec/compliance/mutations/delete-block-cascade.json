@@ -1,0 +1,25 @@
+{
+  "description": "DeleteBlock(cascade): delete 'Getting Started', removes incoming edge, reverts [[Getting Started]] to plain text in referencing block",
+  "initial_vault": "../valid/with-refs",
+  "command": {
+    "type": "DeleteBlock",
+    "base_version": 1,
+    "payload": {
+      "block_id": "20000000-0000-4000-a000-000000000002",
+      "mode": "cascade"
+    }
+  },
+  "expected": {
+    "result": "success",
+    "assertions": [
+      { "type": "block_not_exists", "block_id": "20000000-0000-4000-a000-000000000002" },
+      { "type": "name_index_missing", "name": "Getting Started" },
+      { "type": "edge_not_exists", "edge_id": "e0000000-0000-4000-a000-000000000001" },
+      { "type": "edge_count", "count": 1 },
+      { "type": "block_content_not_contains", "block_id": "20000000-0000-4000-a000-000000000001", "text": "[[Getting Started]]" },
+      { "type": "block_content_contains", "block_id": "20000000-0000-4000-a000-000000000001", "text": "Getting Started" },
+      { "type": "block_footer_not_contains", "block_id": "20000000-0000-4000-a000-000000000001", "name": "Getting Started" },
+      { "type": "event_emitted", "event": "BlockDeleted", "block_id": "20000000-0000-4000-a000-000000000002" }
+    ]
+  }
+}

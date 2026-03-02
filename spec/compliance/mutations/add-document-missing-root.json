@@ -1,0 +1,16 @@
+{
+  "description": "AddDocument: rejected when root block does not exist in heap",
+  "initial_vault": "../valid/minimal",
+  "command": {
+    "type": "AddDocument",
+    "base_version": 1,
+    "payload": {
+      "id": "d0000000-0000-4000-a000-000000000011",
+      "root": "99999999-0000-4000-a000-000000000099"
+    }
+  },
+  "expected": {
+    "result": "rejected",
+    "error": "Root block 99999999-0000-4000-a000-000000000099 does not exist in heap"
+  }
+}
