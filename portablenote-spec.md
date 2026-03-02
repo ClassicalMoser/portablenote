@@ -233,7 +233,9 @@ An edge means: this block references that block. The meaning of the relationship
 
 ## 4. Documents (`/documents`)
 
-Documents are optional views over the block heap. A document is an ordered composition of named blocks. It does not own its blocks — the heap does. The same block may appear in multiple documents. Rearranging or deleting a document never affects the heap or the block graph.
+Documents are **optional views** over the block heap. They are second-class to the block graph — the graph is the knowledge base, documents are a presentation layer. For typical and casual users, documents are the natural way to read and navigate: a linear or hierarchical arrangement of blocks that renders as a familiar document tree.
+
+A document does not own its blocks; the heap does. The same block may appear in multiple documents. Rearranging or deleting a document never affects the heap or the block graph. Internal links within a document are just block-graph edges between blocks that happen to appear in the same document — there is no separate document-internal link structure. `[[Block Name]]` in content resolves via the block graph regardless of which document view you're in.
 
 Each document is a single JSON file in `/documents`, named by UUID: `<uuid>.json`.
 
@@ -272,12 +274,16 @@ Every document has a **root block** — the block whose `name` is the document's
 | `sections[].block` | UUID v4 | Section block UUID. Must exist in heap. |
 | `sections[].subsections` | array | Ordered subsection blocks. Each renders at h3. Max one level deep. |
 
+A document node is a reference to a block UUID plus its position in the hierarchy. No additional node properties are required — the block's own `name` and content supply what the view needs. Implementations may add optional per-node metadata (e.g. display title override for this document only) as long as the core schema remains valid.
+
 ### Document Properties
 
 - **Two levels of intra-document hierarchy.** Root (h1) → sections (h2) → subsections (h3). Content requiring deeper hierarchy becomes a new document, with a `[[reference]]` edge from the subsection block to the new document's root block.
 - **Non-exclusive membership.** A block UUID may appear in multiple documents. The heap owns the block.
 - **Documents are flat.** Documents do not nest within documents. Relationships between documents are expressed as block-level reference edges between their respective root blocks.
 - **Acyclic.** A block may not be both an ancestor and a descendant of itself within a document.
+
+The document definition is the sole input to rendering. Walking root → sections → subsections in order produces the output .md document tree (see §8). No separate export format — the document model is the export model.
 
 ### Orphaned Blocks
 
@@ -288,6 +294,19 @@ A block with no edges in `block-graph.json` — no incoming and no outgoing refe
 ## 5. CQRS Mutation Standards
 
 All state changes are commands. Queries never mutate state. Validation occurs before commitment. Failed commands are rejected with a descriptive error. Successful commands update the relevant artifact(s) and recompute the checksum.
+
+### Save Model
+
+The primary save model is **manual save**. In-progress edits are local to the client until explicitly committed. This ensures half-written content never hits the graph mid-edit, and propagation side effects (name updates, edge recomputation, checksum) fire once per save, not continuously.
+
+Two automatic save behaviors supplement manual save:
+
+- **Autosave on close.** When the application closes with unsaved changes, they are saved automatically before exit.
+- **Periodic autosave.** Unsaved changes are saved on a configurable interval (default: 5 minutes) to limit drift between the client state and the committed vault.
+
+Every command carries a `base_version` field — the vault state version the client was working against when the command was issued. On save, the application layer checks whether the specific artifact being saved has been mutated since `base_version`. If it has, a `SaveConflict` event is emitted. The client decides how to proceed.
+
+Name propagations from renames that occurred since `base_version` are corrected silently by the server as part of the save transaction — they are not conflicts. Deleted referenced blocks are handled by the existing cascade remediation (inline refs reverted to plain text, warning emitted) — also not conflicts. `SaveConflict` fires only when the artifact itself — block content or document definition — was written by another save since `base_version`.
 
 ### Commands
 
@@ -323,6 +342,8 @@ All state changes are commands. Queries never mutate state. Validation occurs be
 
 Every successful command emits a domain event. Events are consumed by the UI layer via Tauri event bridge. Events are not persisted in v0.
 
+All commands carry a `base_version` field. The application layer validates this on save and emits `SaveConflict` if the relevant artifact changed since `base_version`.
+
 | Event | Payload |
 |---|---|
 | `BlockAdded` | block UUID, name, type |
@@ -338,6 +359,7 @@ Every successful command emits a domain event. Events are consumed by the UI lay
 | `EdgeRemoved` | edge UUID |
 | `VaultOpened` | vault UUID, checksum_status |
 | `ChecksumMismatch` | expected, actual, drift_summary |
+| `SaveConflict` | command type, base_version, current_version, artifact UUID |
 
 ---
 
@@ -430,161 +452,121 @@ Format is declared once per vault in the manifest. All blocks in a vault use the
 
 ---
 
-## 11. DDD / Hexagonal Layer Separation
+## 11. Architecture: Core vs. Client
 
-The reference implementation follows strict hexagonal architecture. Layer boundaries are enforced — inner layers have no dependencies on outer layers.
+The system splits into a **core** (domain + server/local engine) and **clients** (UI). The core is modular and portable — a server process or a local desktop process can run it with no knowledge of the UI. Clients are fully separate and may have multiple implementations (desktop, web, future mobile), typically sharing a common SolidJS-based frontend that talks to the core over an API or IPC.
+
+### Core (Domain + Engine)
+
+The core is the only part that touches the vault and enforces invariants. It can run as a library in-process (e.g. desktop app) or as a server process that clients connect to. Boundaries inside the core are hexagonal: distinct concerns, not a single blob.
 
 ```
-┌─────────────────────────────────────────┐
-│                  UI Layer               │  SolidJS via Tauri event bridge
-├─────────────────────────────────────────┤
-│             Application Layer           │  CQRS handlers, validation orchestration
-├─────────────────────────────────────────┤
-│               Domain Layer              │  Pure Rust. Zero external dependencies.
-├─────────────────────────────────────────┤
-│            Infrastructure Layer         │  Adapters: filesystem, Markdown, search
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  PORTS (interfaces)                                              │
+│  ContentFormat · Persistence · Search · Render                   │
+├─────────────────────────────────────────────────────────────────┤
+│  DOMAIN          Pure types, commands, queries, invariants.     │
+│                  No I/O, no serde, no format knowledge.          │
+├─────────────────────────────────────────────────────────────────┤
+│  APPLICATION     CQRS handlers, validation, event emission.     │
+│                  Orchestrates domain + ports.                    │
+├─────────────────────────────────────────────────────────────────┤
+│  ADAPTERS        Separate concerns, each implements a port:     │
+│                  · Format (Markdown parse/serialize)             │
+│                  · Persistence (vault read/write, name index)    │
+│                  · Search (text within scope)                     │
+│                  · Render (document → .md tree)                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Domain Layer (Pure Rust Crate)
+Domain, application, and each adapter are separate concerns. Adapters are not a single “infrastructure layer” — they are separate domains (format, persistence, search, render) that implement ports. The application layer depends on the port interfaces only; it does not know which adapter is wired in.
 
-- Defines all core types: `Block`, `Document`, `Edge`, `Vault`, `Heap`.
-- Defines all commands and queries.
-- Defines all invariants as pure functions.
-- No serde, no filesystem, no Markdown, no async. Pure domain logic only.
-- Publishable as a standalone crate. Other implementations depend on it directly or reimplement the same contract.
+### Clients (UI)
 
-### Application Layer
+Clients are **outside** the core. They never touch the vault or the graph directly. They invoke commands and receive results via whatever transport the core exposes. Core behavior is async and save-based; there is no real-time push. (Desktop may use IPC request/response or in-process callbacks; web uses HTTP request/response.)
 
-- CQRS command handlers. Each command: validate → mutate → emit event.
-- Query handlers. Read-only. No mutation.
-- Owns the transaction boundary — all artifact mutations in a command are atomic.
-- Depends on domain layer and port definitions only.
+- **Desktop (native)** — Core runs in-process. Transport is typically IPC (e.g. Tauri commands/events). Tauri is one way to build a desktop client; it is not required by the spec and not the only way to ship a desktop app.
+- **Web** — Core runs as a server. Transport is HTTP (request/response). The same SolidJS frontend can target the server API; no Tauri involved.
+- **Other ports** — Mobile, CLI, etc. are further client implementations that speak to the core over their own transport.
 
-### Port Definitions
-
-Defined in the application layer. Implemented in infrastructure.
-
-- `ContentFormatPort` — parse, serialize, validate content, extract inline refs, split on heading boundaries.
-- `PersistencePort` — read vault, write artifacts, list blocks, resolve name → UUID.
-- `SearchPort` — full text search within a bounded block set.
-- `RenderPort` — render composition to output document tree.
-
-### Infrastructure Layer
-
-- `MarkdownAdapter` — implements `ContentFormatPort`. Depends on `pulldown-cmark`.
-- `FilesystemAdapter` — implements `PersistencePort`. Reads and writes vault directory.
-- `SearchAdapter` — implements `SearchPort`. Simple text search for v0.
-- `RenderAdapter` — implements `RenderPort`. Renders composition to Markdown document tree.
-
-### UI Layer
-
-- SolidJS frontend.
-- Communicates exclusively via Tauri commands (CQRS commands) and Tauri events (domain events).
-- Never touches the filesystem directly.
-- Never knows about UUIDs except as opaque strings passed through.
-- All intelligence lives in Rust.
+All intelligence (validation, propagation, invariants) lives in the core. The client is a view and an input surface. Multiple client implementations can coexist; they share the same core contract (commands in, results out).
 
 ---
 
-## 12. Scaffolding Outline
+## 12. Suggested Repository Layout
+
+The spec does not mandate a single repo shape. The following reflects the core-vs-client separation and keeps the core portable.
+
+### Core (one repo or subtree)
+
+The core is the engine a server or local process runs. No UI code.
 
 ```
-portablenote/
-  spec/                        # The specification (this document + schemas)
-    portablenote-spec.md
-    schemas/
-      manifest.schema.json
-      document.schema.json
-      block-graph.schema.json
-    compliance/                # Compliance test suite
-      valid/                   # Valid vault snapshots
-      invalid/                 # Invalid vault snapshots  
-      mutations/               # Mutation scenarios with expected outcomes
-
-  crates/
-    portablenote-domain/       # Pure domain layer. Zero dependencies.
-      src/
-        lib.rs
-        types/
-          block.rs
-          document.rs
-          edge.rs
-          heap.rs
-          vault.rs
-        commands/
-          block_commands.rs
-          document_commands.rs
-          edge_commands.rs
-        queries/
-          block_queries.rs
-          document_queries.rs
-          graph_queries.rs
-        invariants.rs
-        events.rs
-
-    portablenote-app/          # Application layer. CQRS handlers.
-      src/
-        lib.rs
-        ports/
-          content_format.rs
-          persistence.rs
-          search.rs
-          render.rs
-        handlers/
-          command_handlers.rs
-          query_handlers.rs
-        validation.rs
-
-    portablenote-infra/        # Infrastructure. Adapters.
-      src/
-        lib.rs
-        adapters/
-          markdown/
-            mod.rs
-            parser.rs          # pulldown-cmark integration
-            serializer.rs
-            ref_extractor.rs
-          filesystem/
-            mod.rs
-            vault_reader.rs
-            vault_writer.rs
-            checksum.rs
-            name_index.rs      # name → UUID resolution from manifest, collision handling
-          search/
-            mod.rs
-          render/
-            mod.rs
-            markdown_render.rs
-
-    portablenote-tauri/        # Tauri shell. Command/event bridge.
-      src/
-        main.rs
-        commands.rs            # Tauri command handlers → app layer
-        events.rs              # Domain events → Tauri emit
-
-  ui/                          # SolidJS frontend
-    src/
-      App.tsx
-      components/
-        BlockEditor/
-        DocumentView/
-        HeapBrowser/
-        GraphView/
-        SearchBar/
-      stores/                  # Reactive state
-      bridge/                  # Tauri invoke wrappers
-
+portablenote-core/             # or split into separate crates/packages
+  domain/                      # Pure domain. Types, commands, queries, invariants, events.
+  application/                 # CQRS handlers, ports (interfaces), validation
+  adapters/                    # One concern per adapter, each implements a port
+    format/                    # e.g. Markdown
+    persistence/               # e.g. filesystem vault, name index
+    search/
+    render/
   README.md
-  LICENSE                      # Apache 2.0
+  LICENSE
 ```
+
+The core can be published as a library. A **server** binary (e.g. `portablenote-server`) depends on the core and exposes an HTTP API. A **desktop** binary that embeds the core and uses Tauri for the UI is a different entry point — same core, different transport.
+
+### Clients (separate repo(s) or subtree)
+
+Clients are fully separate from the core. Multiple implementations are expected; most may share a common SolidJS app that is only wired to different transports.
+
+```
+portablenote-client/            # or clients/ with subdirs per target
+  solid/                        # Shared SolidJS app (stores, components, bridge)
+  desktop/                      # Tauri shell: loads solid/, IPC to core in-process
+  web/                          # Same solid/ or build, talks to portablenote-server
+  README.md
+```
+
+- **Tauri** is used only for the desktop client: it provides the native window and the IPC bridge so the SolidJS app can invoke the in-process core. Other client targets (web, future mobile) do not use Tauri.
+- The same SolidJS core (BlockEditor, DocumentView, HeapBrowser, GraphView, etc.) can target desktop (Tauri IPC) or web (HTTP) by swapping the bridge that sends commands and receives responses.
+
+### Summary
+
+| Concern        | Lives in   | Consumed by                          |
+|----------------|------------|--------------------------------------|
+| Domain         | core       | application, all adapters           |
+| Ports          | core       | application (defines), adapters (implement) |
+| Application    | core       | server binary, desktop binary        |
+| Adapters       | core       | server binary, desktop binary        |
+| Server binary  | core       | web client, future mobile client    |
+| Desktop binary | core + Tauri | desktop client (SolidJS in Tauri shell) |
+| SolidJS app    | client     | desktop (via Tauri), web (via fetch/WS) |
+
+---
+
+## 13. Spec as Separate Artifact / Compliance
+
+The specification can be maintained and versioned **separately** from any implementation. The spec artifact includes:
+
+- **This document** — normative description of vault structure, invariants, commands, and behavior.
+- **JSON schemas** — for `manifest.json`, document definitions, and `block-graph.json`, so that any implementation can validate artifact shape.
+- **Compliance test suite** — runnable tests that any domain implementation can execute against:
+  - **Valid vaults** — load and satisfy invariants; no errors.
+  - **Invalid vaults** — load and reject or remediate as specified (dangling UUIDs, duplicate names, malformed frontmatter, etc.).
+  - **Mutation scenarios** — given initial vault state and a command, assert expected outcome (success + resulting state, or rejection with specified error).
+
+Implementations (including the reference core) depend on the spec as a dependency or submodule: they run the compliance suite in CI and treat the schemas as the contract for persistence. The spec repo does not contain engine or UI code — only documentation, schemas, and tests.
+
+**Practical considerations.** Keeping the suite in sync with the spec is ongoing work; every spec change should yield updated fixtures and scenarios. The tests need a well-defined interface (e.g. “load vault from path”, “execute command with payload”, “assert vault state or error”) so that a Rust core, a future Go or TypeScript implementation, or a server API can all run the same scenarios. That may imply a small driver or harness (e.g. CLI or library that takes a vault path and a scenario file and returns pass/fail). Language-agnostic scenarios (e.g. JSON or YAML describing initial vault + command + expected outcome) keep the suite portable. How much of this is realistic for v0 vs. later is an open question — even a minimal set of valid/invalid fixtures and a handful of mutation scenarios would already make the spec runnable and would catch regressions in the reference implementation.
 
 ---
 
 ## Appendix: Open Questions for v0.2+
 
 - Graph traversal queries: which traversal operations belong in the domain layer vs. delegated to infrastructure?
-- Compliance certification: informal for v0, registry model for v1+.
+- Compliance suite scope: minimal (valid/invalid fixtures + a few mutation scenarios) for v0, or fuller scenario coverage? Harness format (CLI, library, language-agnostic scenario files)?
+- Compliance certification: informal for v0 (suite exists, implementations run it); registry or badge model for v1+ if the ecosystem grows.
 - Template system: first-class spec entry or implementation-defined convention?
 
 ---
