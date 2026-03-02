@@ -1,0 +1,144 @@
+mod common;
+
+use portablenote_core::invariants::validate_vault;
+
+// --- Valid vaults: zero violations ---
+
+#[test]
+fn valid_minimal_passes_all_invariants() {
+    let dir = common::spec_dir().join("valid").join("minimal");
+    let vault = common::load_vault(&dir);
+    let violations = validate_vault(&vault);
+    assert!(
+        violations.is_empty(),
+        "minimal vault should have no violations, got: {violations:?}"
+    );
+}
+
+#[test]
+fn valid_with_refs_passes_all_invariants() {
+    let dir = common::spec_dir().join("valid").join("with-refs");
+    let vault = common::load_vault(&dir);
+    let violations = validate_vault(&vault);
+    assert!(
+        violations.is_empty(),
+        "with-refs vault should have no violations, got: {violations:?}"
+    );
+}
+
+#[test]
+fn valid_with_documents_passes_all_invariants() {
+    let dir = common::spec_dir().join("valid").join("with-documents");
+    let vault = common::load_vault(&dir);
+    let violations = validate_vault(&vault);
+    assert!(
+        violations.is_empty(),
+        "with-documents vault should have no violations, got: {violations:?}"
+    );
+}
+
+#[test]
+fn valid_with_orphans_passes_all_invariants() {
+    let dir = common::spec_dir().join("valid").join("with-orphans");
+    let vault = common::load_vault(&dir);
+    let violations = validate_vault(&vault);
+    assert!(
+        violations.is_empty(),
+        "with-orphans vault should have no violations, got: {violations:?}"
+    );
+}
+
+// --- Invalid vaults: specific violations ---
+
+#[test]
+fn invalid_dangling_uuid_detected() {
+    let dir = common::spec_dir().join("invalid").join("dangling-uuid");
+    let vault = common::load_vault(&dir);
+    let violations = validate_vault(&vault);
+
+    assert!(!violations.is_empty(), "should detect dangling UUID");
+    let v = violations
+        .iter()
+        .find(|v| v.invariant == Some(1))
+        .expect("should have invariant 1 violation");
+    assert!(
+        v.description.contains("exist"),
+        "description should mention existence: {}",
+        v.description
+    );
+}
+
+#[test]
+fn invalid_duplicate_name_detected() {
+    let dir = common::spec_dir().join("invalid").join("duplicate-name");
+    let vault = common::load_vault(&dir);
+    let violations = validate_vault(&vault);
+
+    assert!(!violations.is_empty(), "should detect duplicate name");
+    let v = violations
+        .iter()
+        .find(|v| v.invariant == Some(6))
+        .expect("should have invariant 6 violation");
+    assert!(
+        v.description.contains("name"),
+        "description should mention name: {}",
+        v.description
+    );
+}
+
+#[test]
+fn invalid_heading_in_block_detected() {
+    let dir = common::spec_dir().join("invalid").join("heading-in-block");
+    let vault = common::load_vault(&dir);
+    let violations = validate_vault(&vault);
+
+    assert!(!violations.is_empty(), "should detect heading in block");
+    let v = violations
+        .iter()
+        .find(|v| v.invariant == Some(8))
+        .expect("should have invariant 8 violation");
+    assert!(
+        v.description.contains("heading"),
+        "description should mention heading: {}",
+        v.description
+    );
+}
+
+#[test]
+fn invalid_bad_checksum_detected() {
+    let dir = common::spec_dir().join("invalid").join("bad-checksum");
+    let vault = common::load_vault(&dir);
+    let violations = validate_vault(&vault);
+
+    assert!(!violations.is_empty(), "should detect bad checksum");
+    let v = violations
+        .iter()
+        .find(|v| v.invariant == Some(9))
+        .expect("should have invariant 9 violation");
+    assert!(
+        v.description.contains("checksum"),
+        "description should mention checksum: {}",
+        v.description
+    );
+}
+
+#[test]
+fn invalid_missing_metadata_detected() {
+    let dir = common::spec_dir().join("invalid").join("missing-frontmatter");
+    let vault = common::load_vault(&dir);
+    let violations = validate_vault(&vault);
+
+    assert!(
+        !violations.is_empty(),
+        "should detect missing metadata field"
+    );
+    let v = violations
+        .iter()
+        .find(|v| v.invariant.is_none())
+        .expect("should have structural (non-invariant) violation");
+    assert!(
+        v.description.contains("name"),
+        "description should mention missing name: {}",
+        v.description
+    );
+}
