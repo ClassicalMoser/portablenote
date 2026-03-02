@@ -12,6 +12,9 @@ use crate::types::Vault;
 ///      Each edge contributes: `edge:<uuid>\n<source>-><target>\n`
 ///
 /// The result is `sha256:<hex>`.
+///
+/// Note: `manifest.names` is deliberately excluded — it is derived from block
+/// metadata and can be reconstructed by scanning `/blocks`.
 pub fn compute(vault: &Vault) -> String {
     let mut hasher = Sha256::new();
 
@@ -32,6 +35,18 @@ pub fn compute(vault: &Vault) -> String {
 
     let hash = hasher.finalize();
     format!("sha256:{:x}", hash)
+}
+
+/// Returns `true` if the vault's source artifacts no longer match the checksum
+/// stored in `manifest.checksum`.
+///
+/// This is a **load-time / persistence-boundary check** for detecting manual
+/// file drift (edits made outside the application). It is not an in-memory
+/// mutation invariant — the checksum is stale by definition between mutation
+/// and the next save. Call this after loading a vault from disk, not during
+/// domain validation.
+pub fn is_drifted(vault: &Vault) -> bool {
+    compute(vault) != vault.manifest.checksum
 }
 
 #[cfg(test)]

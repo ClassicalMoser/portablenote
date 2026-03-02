@@ -2,12 +2,16 @@ use std::collections::{HashMap, HashSet};
 
 use uuid::Uuid;
 
-use crate::checksum;
 use crate::error::{Violation, ViolationDetails};
 use crate::types::Vault;
 
-/// Validate all spec invariants (section 6, items 1-9) plus structural checks.
+/// Validate all spec invariants (section 6, items 1-8) plus structural checks.
 /// Returns an empty vec if the vault is fully conformant.
+///
+/// Invariant 9 (checksum integrity) is deliberately excluded here. It is a
+/// persistence-boundary check — meaningful only when comparing a freshly loaded
+/// vault against its on-disk state. After any in-memory mutation the checksum
+/// is stale by design. Use `checksum::is_drifted` at load time instead.
 pub fn validate_vault(vault: &Vault) -> Vec<Violation> {
     let mut violations = Vec::new();
 
@@ -20,7 +24,6 @@ pub fn validate_vault(vault: &Vault) -> Vec<Violation> {
     check_invariant_6(vault, &mut violations);
     check_invariant_7(vault, &mut violations);
     check_invariant_8(vault, &mut violations);
-    check_invariant_9(vault, &mut violations);
 
     violations
 }
@@ -278,23 +281,6 @@ fn check_invariant_8(vault: &Vault, violations: &mut Vec<Violation>) {
                 },
             });
         }
-    }
-}
-
-/// Invariant 9: The manifest checksum reflects the current state of all source artifacts.
-fn check_invariant_9(vault: &Vault, violations: &mut Vec<Violation>) {
-    let computed = checksum::compute(vault);
-
-    if vault.manifest.checksum != computed {
-        violations.push(Violation {
-            invariant: Some(9),
-            description: "Manifest checksum does not match computed checksum of source artifacts"
-                .to_string(),
-            details: ViolationDetails::ChecksumMismatch {
-                manifest_checksum: vault.manifest.checksum.clone(),
-                computed_checksum: computed,
-            },
-        });
     }
 }
 

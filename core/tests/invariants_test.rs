@@ -105,24 +105,6 @@ fn invalid_heading_in_block_detected() {
 }
 
 #[test]
-fn invalid_bad_checksum_detected() {
-    let dir = common::spec_dir().join("invalid").join("bad-checksum");
-    let vault = common::load_vault(&dir);
-    let violations = validate_vault(&vault);
-
-    assert!(!violations.is_empty(), "should detect bad checksum");
-    let v = violations
-        .iter()
-        .find(|v| v.invariant == Some(9))
-        .expect("should have invariant 9 violation");
-    assert!(
-        v.description.contains("checksum"),
-        "description should mention checksum: {}",
-        v.description
-    );
-}
-
-#[test]
 fn invalid_missing_metadata_detected() {
     let dir = common::spec_dir().join("invalid").join("missing-frontmatter");
     let vault = common::load_vault(&dir);

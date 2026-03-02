@@ -1,5 +1,29 @@
 mod common;
 
+use portablenote_core::checksum;
+
+#[test]
+fn valid_vaults_have_no_drift() {
+    for name in &["minimal", "with-refs", "with-documents", "with-orphans"] {
+        let dir = common::spec_dir().join("valid").join(name);
+        let vault = common::load_vault(&dir);
+        assert!(
+            !checksum::is_drifted(&vault),
+            "valid vault '{name}' should not report drift"
+        );
+    }
+}
+
+#[test]
+fn bad_checksum_vault_is_detected_as_drifted() {
+    let dir = common::spec_dir().join("invalid").join("bad-checksum");
+    let vault = common::load_vault(&dir);
+    assert!(
+        checksum::is_drifted(&vault),
+        "bad-checksum vault should be detected as drifted at load time"
+    );
+}
+
 #[test]
 fn load_minimal_vault() {
     let dir = common::spec_dir().join("valid").join("minimal");
