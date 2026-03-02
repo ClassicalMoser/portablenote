@@ -57,7 +57,7 @@ The program validates all source artifacts on open and rejects or remediates inc
 
 ## 1. Manifest (`manifest.json`)
 
-Declares vault identity, spec version, content format, and integrity checksum.
+Declares vault identity, spec version, content format, integrity checksum, and the vault-wide name index.
 
 ### Schema
 
@@ -66,7 +66,11 @@ Declares vault identity, spec version, content format, and integrity checksum.
   "vault_id": "uuid-v4",
   "spec_version": "0.1.0",
   "format": "markdown",
-  "checksum": "sha256:<hex>"
+  "checksum": "sha256:<hex>",
+  "names": {
+    "Getting Started": "uuid-v4",
+    "Key Insight": "uuid-v4"
+  }
 }
 ```
 
@@ -78,6 +82,9 @@ Declares vault identity, spec version, content format, and integrity checksum.
 | `spec_version` | semver string | PortableNote spec version this vault conforms to. |
 | `format` | string | Content format for all blocks in this vault. `"markdown"` for v0. Extensible. |
 | `checksum` | string | SHA-256 over canonical serialization of all source artifacts. Prefixed `sha256:`. |
+| `names` | object | Vault-wide name index. Maps every block `name` to its UUID. Updated on every `AddBlock`, `RenameBlock`, and `DeleteBlock`. |
+
+The `names` index is the authoritative name → UUID lookup. It is not included in the checksum computation — it is derived from block frontmatter and can be reconstructed by scanning `/blocks` if needed.
 
 ### Checksum Computation
 
@@ -543,7 +550,7 @@ portablenote/
             vault_reader.rs
             vault_writer.rs
             checksum.rs
-            name_index.rs      # name → UUID resolution, collision handling
+            name_index.rs      # name → UUID resolution from manifest, collision handling
           search/
             mod.rs
           render/
@@ -576,7 +583,6 @@ portablenote/
 
 ## Appendix: Open Questions for v0.2+
 
-- Name index persistence: in-memory on open, or a persisted index file in `.portablenote/`?
 - Graph traversal queries: which traversal operations belong in the domain layer vs. delegated to infrastructure?
 - Compliance certification: informal for v0, registry model for v1+.
 - Template system: first-class spec entry or implementation-defined convention?
