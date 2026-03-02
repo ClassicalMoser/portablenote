@@ -1,0 +1,21 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Cargo lock for libraries (not binaries — omit if this becomes a binary crate)
+# Cargo.lock  # intentionally tracked for reproducible builds
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
