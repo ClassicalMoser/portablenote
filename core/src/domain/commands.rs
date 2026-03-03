@@ -1,12 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum DeleteMode {
-    Safe,
-    Cascade,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddBlock {
     pub base_version: u64,
@@ -30,10 +24,15 @@ pub struct MutateBlockContent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeleteBlock {
+pub struct DeleteBlockSafe {
     pub base_version: u64,
     pub block_id: Uuid,
-    pub mode: DeleteMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteBlockCascade {
+    pub base_version: u64,
+    pub block_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,7 +97,8 @@ pub enum Command {
     AddBlock(AddBlock),
     RenameBlock(RenameBlock),
     MutateBlockContent(MutateBlockContent),
-    DeleteBlock(DeleteBlock),
+    DeleteBlockSafe(DeleteBlockSafe),
+    DeleteBlockCascade(DeleteBlockCascade),
     AddDocument(AddDocument),
     AppendSection(AppendSection),
     AppendSubsection(AppendSubsection),

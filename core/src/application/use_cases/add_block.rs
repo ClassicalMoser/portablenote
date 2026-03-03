@@ -1,17 +1,18 @@
 use uuid::Uuid;
 
 use crate::application::ports::{BlockStore, NameIndex};
+use crate::application::results::AddBlockResult;
 use crate::domain::blocks;
 use crate::domain::error::DomainError;
 use crate::domain::events::BlockAdded;
 
 pub fn execute(
-    blocks: &mut dyn BlockStore,
-    names: &mut dyn NameIndex,
+    blocks: &dyn BlockStore,
+    names: &dyn NameIndex,
     id: Uuid,
     name: &str,
     content: &str,
-) -> Result<BlockAdded, DomainError> {
+) -> Result<AddBlockResult, DomainError> {
     if let Some(existing) = names.resolve(name) {
         return Err(DomainError::NameConflict(name.to_string(), existing));
     }
@@ -20,12 +21,13 @@ pub fn execute(
     }
 
     let block = blocks::create(id, name, content)?;
-    blocks.save(&block);
-    names.set(name, id);
 
-    Ok(BlockAdded {
-        block_id: id,
-        name: name.to_string(),
+    Ok(AddBlockResult {
+        block,
+        event: BlockAdded {
+            block_id: id,
+            name: name.to_string(),
+        },
     })
 }
 
@@ -46,7 +48,7 @@ mod tests {
     }
 
     #[test]
-    fn happy_path_creates_block() {
+    fn happy_path_returns_block_and_event() {
         let mut blocks = MockBlockStore::new();
         let mut names = MockNameIndex::new();
 
@@ -58,21 +60,18 @@ mod tests {
             .expect_get()
             .with(eq(id()))
             .return_once(|_| None);
-        blocks.expect_save().times(1).return_once(|_| ());
-        names
-            .expect_set()
-            .with(eq("Alpha"), eq(id()))
-            .times(1)
-            .return_once(|_, _| ());
 
-        let event = execute(&mut blocks, &mut names, id(), "Alpha", "content").unwrap();
-        assert_eq!(event.block_id, id());
-        assert_eq!(event.name, "Alpha");
+        let result = execute(&blocks, &names, id(), "Alpha", "content").unwrap();
+        assert_eq!(result.block.id, id());
+        assert_eq!(result.block.name, "Alpha");
+        assert_eq!(result.block.content, "content");
+        assert_eq!(result.event.block_id, id());
+        assert_eq!(result.event.name, "Alpha");
     }
 
     #[test]
     fn name_conflict_returns_error() {
-        let mut blocks = MockBlockStore::new();
+        let blocks = MockBlockStore::new();
         let mut names = MockNameIndex::new();
 
         names
@@ -80,7 +79,7 @@ mod tests {
             .with(eq("Alpha"))
             .return_once(move |_| Some(other()));
 
-        let result = execute(&mut blocks, &mut names, id(), "Alpha", "content");
+        let result = execute(&blocks, &names, id(), "Alpha", "content");
         assert!(matches!(result, Err(DomainError::NameConflict(_, _))));
     }
 
@@ -106,7 +105,7 @@ mod tests {
             })
         });
 
-        let result = execute(&mut blocks, &mut names, id(), "Alpha", "content");
+        let result = execute(&blocks, &names, id(), "Alpha", "content");
         assert!(matches!(result, Err(DomainError::DuplicateId(_))));
     }
 
@@ -124,7 +123,7 @@ mod tests {
             .with(eq(id()))
             .return_once(|_| None);
 
-        let result = execute(&mut blocks, &mut names, id(), "Alpha", "## Bad");
+        let result = execute(&blocks, &names, id(), "Alpha", "## Bad");
         assert!(matches!(result, Err(DomainError::HeadingInContent)));
     }
 }
