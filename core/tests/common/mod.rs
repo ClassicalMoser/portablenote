@@ -171,6 +171,11 @@ fn parse_yaml_metadata(yaml_str: &str) -> HashMap<String, String> {
 }
 
 /// Load the `_expected_error.json` for an invalid vault fixture.
+/// Each test binary that includes `mod common` gets its own copy of this module.
+/// The compiler warns when a binary doesn't call this function, even though it
+/// is used in `fixture_loader_test.rs` and will be used by future invalid-fixture
+/// tests. The suppression is intentional — this is shared test infrastructure.
+#[allow(dead_code)]
 pub fn load_expected_error(vault_dir: &Path) -> serde_json::Value {
     let path = vault_dir.join("_expected_error.json");
     let content = fs::read_to_string(&path).expect("Failed to read _expected_error.json");

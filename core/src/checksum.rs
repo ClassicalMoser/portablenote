@@ -10,6 +10,12 @@ use crate::types::Vault;
 ///      Each block contributes: `block:<uuid>\n<name>\n<content>\n`
 ///   2. Edges: sorted by UUID.
 ///      Each edge contributes: `edge:<uuid>\n<source>-><target>\n`
+///   3. Documents: sorted by UUID.
+///      Each document contributes: `doc:<uuid>\nroot:<root_uuid>\n`
+///      followed by sections in their declared order (order is semantically
+///      significant for compositions — not sorted):
+///        `section:<block_uuid>\n`
+///        `sub:<block_uuid>\n`  (for each subsection, in order)
 ///
 /// The result is `sha256:<hex>`.
 ///
@@ -31,6 +37,20 @@ pub fn compute(vault: &Vault) -> String {
 
     for edge in &edges {
         hasher.update(format!("edge:{}\n{}->{}\n", edge.id, edge.source, edge.target).as_bytes());
+    }
+
+    let mut doc_ids: Vec<&Uuid> = vault.documents.keys().collect();
+    doc_ids.sort();
+
+    for id in doc_ids {
+        let doc = &vault.documents[id];
+        hasher.update(format!("doc:{}\nroot:{}\n", id, doc.root).as_bytes());
+        for section in &doc.sections {
+            hasher.update(format!("section:{}\n", section.block).as_bytes());
+            for sub in &section.subsections {
+                hasher.update(format!("sub:{}\n", sub.block).as_bytes());
+            }
+        }
     }
 
     let hash = hasher.finalize();
@@ -142,6 +162,59 @@ mod tests {
             id: edge_id,
             source: id_a,
             target: id_b,
+        });
+
+        assert_ne!(compute(&v1), compute(&v2));
+    }
+
+    #[test]
+    fn documents_affect_checksum() {
+        let id_a = Uuid::parse_str("00000000-0000-4000-a000-000000000001").unwrap();
+        let id_b = Uuid::parse_str("00000000-0000-4000-a000-000000000002").unwrap();
+        let doc_id = Uuid::parse_str("00000000-0000-4000-a000-0000000000d1").unwrap();
+
+        let mut v1 = empty_vault();
+        v1.blocks.insert(id_a, make_block(id_a, "A", ""));
+        v1.blocks.insert(id_b, make_block(id_b, "B", ""));
+
+        let mut v2 = v1.clone();
+        v2.documents.insert(doc_id, Document {
+            id: doc_id,
+            root: id_a,
+            sections: vec![Section {
+                block: id_b,
+                subsections: vec![],
+            }],
+        });
+
+        assert_ne!(compute(&v1), compute(&v2));
+    }
+
+    #[test]
+    fn document_section_order_affects_checksum() {
+        let id_a = Uuid::parse_str("00000000-0000-4000-a000-000000000001").unwrap();
+        let id_b = Uuid::parse_str("00000000-0000-4000-a000-000000000002").unwrap();
+        let id_c = Uuid::parse_str("00000000-0000-4000-a000-000000000003").unwrap();
+        let doc_id = Uuid::parse_str("00000000-0000-4000-a000-0000000000d1").unwrap();
+
+        let mut v1 = empty_vault();
+        v1.documents.insert(doc_id, Document {
+            id: doc_id,
+            root: id_a,
+            sections: vec![
+                Section { block: id_b, subsections: vec![] },
+                Section { block: id_c, subsections: vec![] },
+            ],
+        });
+
+        let mut v2 = empty_vault();
+        v2.documents.insert(doc_id, Document {
+            id: doc_id,
+            root: id_a,
+            sections: vec![
+                Section { block: id_c, subsections: vec![] },
+                Section { block: id_b, subsections: vec![] },
+            ],
         });
 
         assert_ne!(compute(&v1), compute(&v2));

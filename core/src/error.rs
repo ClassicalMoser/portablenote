@@ -3,8 +3,6 @@ use uuid::Uuid;
 /// A specific invariant violation detected during vault validation.
 #[derive(Debug, Clone)]
 pub struct Violation {
-    /// Invariant number from spec section 6 (1-10), or None for structural errors.
-    pub invariant: Option<u8>,
     pub description: String,
     pub details: ViolationDetails,
 }

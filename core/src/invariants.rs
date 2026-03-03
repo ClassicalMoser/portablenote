@@ -5,35 +5,34 @@ use uuid::Uuid;
 use crate::error::{Violation, ViolationDetails};
 use crate::types::Vault;
 
-/// Validate all spec invariants (section 6, items 1-8) plus structural checks.
+/// Validate all spec invariants plus structural checks.
 /// Returns an empty vec if the vault is fully conformant.
 ///
-/// Invariant 9 (checksum integrity) is deliberately excluded here. It is a
-/// persistence-boundary check — meaningful only when comparing a freshly loaded
+/// Checksum integrity is deliberately excluded here — it is a
+/// persistence-boundary check, meaningful only when comparing a freshly loaded
 /// vault against its on-disk state. After any in-memory mutation the checksum
 /// is stale by design. Use `checksum::is_drifted` at load time instead.
 pub fn validate_vault(vault: &Vault) -> Vec<Violation> {
     let mut violations = Vec::new();
 
-    check_structural(vault, &mut violations);
-    check_invariant_1(vault, &mut violations);
-    check_invariant_2(vault, &mut violations);
-    check_invariant_3(vault, &mut violations);
-    check_invariant_4(vault, &mut violations);
-    check_invariant_5(vault, &mut violations);
-    check_invariant_6(vault, &mut violations);
-    check_invariant_7(vault, &mut violations);
-    check_invariant_8(vault, &mut violations);
+    check_block_metadata(vault, &mut violations);
+    check_edge_endpoints(vault, &mut violations);
+    check_document_block_refs(vault, &mut violations);
+    check_document_acyclicity(vault, &mut violations);
+    check_inline_ref_annotations(vault, &mut violations);
+    check_footer_annotation_targets(vault, &mut violations);
+    check_name_uniqueness(vault, &mut violations);
+    check_uuid_filename_match(vault, &mut violations);
+    check_no_headings_in_content(vault, &mut violations);
 
     violations
 }
 
-/// Structural: every block must have a non-empty name.
-fn check_structural(vault: &Vault, violations: &mut Vec<Violation>) {
+/// Every block must have a non-empty name.
+fn check_block_metadata(vault: &Vault, violations: &mut Vec<Violation>) {
     for block in vault.blocks.values() {
         if block.name.is_empty() {
             violations.push(Violation {
-                invariant: None,
                 description: "Block metadata missing required 'name' field".to_string(),
                 details: ViolationDetails::MissingMetadataField {
                     block_id: block.id,
@@ -44,12 +43,11 @@ fn check_structural(vault: &Vault, violations: &mut Vec<Violation>) {
     }
 }
 
-/// Invariant 1: Every UUID in block-graph.json source or target fields exists in the heap.
-fn check_invariant_1(vault: &Vault, violations: &mut Vec<Violation>) {
+/// Every UUID in block-graph.json source or target fields must exist in the heap.
+fn check_edge_endpoints(vault: &Vault, violations: &mut Vec<Violation>) {
     for edge in &vault.graph.edges {
         if !vault.blocks.contains_key(&edge.source) {
             violations.push(Violation {
-                invariant: Some(1),
                 description: "Edge source UUID does not exist in heap".to_string(),
                 details: ViolationDetails::DanglingEdgeUuid {
                     edge_id: edge.id,
@@ -60,7 +58,6 @@ fn check_invariant_1(vault: &Vault, violations: &mut Vec<Violation>) {
         }
         if !vault.blocks.contains_key(&edge.target) {
             violations.push(Violation {
-                invariant: Some(1),
                 description: "Edge target UUID does not exist in heap".to_string(),
                 details: ViolationDetails::DanglingEdgeUuid {
                     edge_id: edge.id,
@@ -72,12 +69,11 @@ fn check_invariant_1(vault: &Vault, violations: &mut Vec<Violation>) {
     }
 }
 
-/// Invariant 2: Every block UUID in a document's root, sections, or subsections exists in the heap.
-fn check_invariant_2(vault: &Vault, violations: &mut Vec<Violation>) {
+/// Every block UUID in a document's root, sections, or subsections must exist in the heap.
+fn check_document_block_refs(vault: &Vault, violations: &mut Vec<Violation>) {
     for doc in vault.documents.values() {
         if !vault.blocks.contains_key(&doc.root) {
             violations.push(Violation {
-                invariant: Some(2),
                 description: "Document root UUID does not exist in heap".to_string(),
                 details: ViolationDetails::DanglingDocumentUuid {
                     document_id: doc.id,
@@ -89,7 +85,6 @@ fn check_invariant_2(vault: &Vault, violations: &mut Vec<Violation>) {
         for section in &doc.sections {
             if !vault.blocks.contains_key(&section.block) {
                 violations.push(Violation {
-                    invariant: Some(2),
                     description: "Document section UUID does not exist in heap".to_string(),
                     details: ViolationDetails::DanglingDocumentUuid {
                         document_id: doc.id,
@@ -101,7 +96,6 @@ fn check_invariant_2(vault: &Vault, violations: &mut Vec<Violation>) {
             for sub in &section.subsections {
                 if !vault.blocks.contains_key(&sub.block) {
                     violations.push(Violation {
-                        invariant: Some(2),
                         description: "Document subsection UUID does not exist in heap".to_string(),
                         details: ViolationDetails::DanglingDocumentUuid {
                             document_id: doc.id,
@@ -115,10 +109,8 @@ fn check_invariant_2(vault: &Vault, violations: &mut Vec<Violation>) {
     }
 }
 
-/// Invariant 3: No block is its own ancestor within a document (acyclicity).
-/// With only two levels (section/subsection), this means a block cannot appear as
-/// both a section and a subsection of itself, and root cannot also be a section.
-fn check_invariant_3(vault: &Vault, violations: &mut Vec<Violation>) {
+/// No block may appear more than once in a document's hierarchy (root, sections, subsections).
+fn check_document_acyclicity(vault: &Vault, violations: &mut Vec<Violation>) {
     for doc in vault.documents.values() {
         let mut seen = HashSet::new();
         seen.insert(doc.root);
@@ -126,7 +118,6 @@ fn check_invariant_3(vault: &Vault, violations: &mut Vec<Violation>) {
         for section in &doc.sections {
             if !seen.insert(section.block) {
                 violations.push(Violation {
-                    invariant: Some(3),
                     description: "Block appears multiple times in document hierarchy".to_string(),
                     details: ViolationDetails::DocumentCycle {
                         document_id: doc.id,
@@ -137,7 +128,6 @@ fn check_invariant_3(vault: &Vault, violations: &mut Vec<Violation>) {
             for sub in &section.subsections {
                 if !seen.insert(sub.block) {
                     violations.push(Violation {
-                        invariant: Some(3),
                         description: "Block appears multiple times in document hierarchy"
                             .to_string(),
                         details: ViolationDetails::DocumentCycle {
@@ -151,9 +141,9 @@ fn check_invariant_3(vault: &Vault, violations: &mut Vec<Violation>) {
     }
 }
 
-/// Invariant 4: Every [[Name]] inline reference has a corresponding footer annotation
+/// Every `[[Name]]` inline reference must have a corresponding footer annotation
 /// and a corresponding edge in block-graph.json.
-fn check_invariant_4(vault: &Vault, violations: &mut Vec<Violation>) {
+fn check_inline_ref_annotations(vault: &Vault, violations: &mut Vec<Violation>) {
     let edge_set: HashSet<(Uuid, Uuid)> = vault
         .graph
         .edges
@@ -168,7 +158,6 @@ fn check_invariant_4(vault: &Vault, violations: &mut Vec<Violation>) {
         for ref_name in &inline_refs {
             if !footer_map.contains_key(ref_name.as_str()) {
                 violations.push(Violation {
-                    invariant: Some(4),
                     description: format!(
                         "Inline reference [[{ref_name}]] has no footer annotation"
                     ),
@@ -183,7 +172,6 @@ fn check_invariant_4(vault: &Vault, violations: &mut Vec<Violation>) {
             if let Some(target_id) = footer_map.get(ref_name.as_str()) {
                 if !edge_set.contains(&(block.id, *target_id)) {
                     violations.push(Violation {
-                        invariant: Some(4),
                         description: format!(
                             "Inline reference [[{ref_name}]] has no corresponding edge in block-graph.json"
                         ),
@@ -199,8 +187,8 @@ fn check_invariant_4(vault: &Vault, violations: &mut Vec<Violation>) {
     }
 }
 
-/// Invariant 5: Every footer annotation maps to a name that resolves to an existing block.
-fn check_invariant_5(vault: &Vault, violations: &mut Vec<Violation>) {
+/// Every footer annotation must map to a name that resolves to an existing block.
+fn check_footer_annotation_targets(vault: &Vault, violations: &mut Vec<Violation>) {
     for block in vault.blocks.values() {
         let footer_map = extract_footer_annotations(&block.content);
 
@@ -210,7 +198,6 @@ fn check_invariant_5(vault: &Vault, violations: &mut Vec<Violation>) {
 
             if !target_exists || !name_resolves {
                 violations.push(Violation {
-                    invariant: Some(5),
                     description: format!(
                         "Footer annotation [{name}] does not resolve to an existing block"
                     ),
@@ -224,8 +211,8 @@ fn check_invariant_5(vault: &Vault, violations: &mut Vec<Violation>) {
     }
 }
 
-/// Invariant 6: Block names are vault-wide unique.
-fn check_invariant_6(vault: &Vault, violations: &mut Vec<Violation>) {
+/// Block names must be vault-wide unique.
+fn check_name_uniqueness(vault: &Vault, violations: &mut Vec<Violation>) {
     let mut names: HashMap<&str, Vec<Uuid>> = HashMap::new();
 
     for block in vault.blocks.values() {
@@ -237,7 +224,6 @@ fn check_invariant_6(vault: &Vault, violations: &mut Vec<Violation>) {
     for (name, ids) in &names {
         if ids.len() > 1 {
             violations.push(Violation {
-                invariant: Some(6),
                 description: format!("Multiple blocks share the name '{name}'"),
                 details: ViolationDetails::DuplicateName {
                     name: name.to_string(),
@@ -248,14 +234,11 @@ fn check_invariant_6(vault: &Vault, violations: &mut Vec<Violation>) {
     }
 }
 
-/// Invariant 7: Every block file UUID matches its metadata id field.
-/// In our model, the fixture loader already uses the filename UUID as the HashMap key
-/// and the metadata id as `block.id`. We check they match.
-fn check_invariant_7(vault: &Vault, violations: &mut Vec<Violation>) {
+/// Every block file's UUID (filename stem) must match the `id` field in its metadata.
+fn check_uuid_filename_match(vault: &Vault, violations: &mut Vec<Violation>) {
     for (&file_uuid, block) in &vault.blocks {
         if file_uuid != block.id {
             violations.push(Violation {
-                invariant: Some(7),
                 description: "Block file UUID does not match metadata id".to_string(),
                 details: ViolationDetails::UuidMismatch {
                     file_uuid,
@@ -266,12 +249,11 @@ fn check_invariant_7(vault: &Vault, violations: &mut Vec<Violation>) {
     }
 }
 
-/// Invariant 8: No block content contains heading syntax (h1-h6) outside fenced code blocks.
-fn check_invariant_8(vault: &Vault, violations: &mut Vec<Violation>) {
+/// No block content may contain heading syntax (h1-h6) outside fenced code blocks.
+fn check_no_headings_in_content(vault: &Vault, violations: &mut Vec<Violation>) {
     for block in vault.blocks.values() {
         if let Some((level, text)) = find_heading_outside_fence(&block.content) {
             violations.push(Violation {
-                invariant: Some(8),
                 description: "Block content contains heading syntax outside fenced code block"
                     .to_string(),
                 details: ViolationDetails::HeadingInContent {

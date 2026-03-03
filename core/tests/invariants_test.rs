@@ -1,5 +1,6 @@
 mod common;
 
+use portablenote_core::error::ViolationDetails;
 use portablenote_core::invariants::validate_vault;
 
 // --- Valid vaults: zero violations ---
@@ -59,8 +60,8 @@ fn invalid_dangling_uuid_detected() {
     assert!(!violations.is_empty(), "should detect dangling UUID");
     let v = violations
         .iter()
-        .find(|v| v.invariant == Some(1))
-        .expect("should have invariant 1 violation");
+        .find(|v| matches!(v.details, ViolationDetails::DanglingEdgeUuid { .. }))
+        .expect("should have a DanglingEdgeUuid violation");
     assert!(
         v.description.contains("exist"),
         "description should mention existence: {}",
@@ -77,8 +78,8 @@ fn invalid_duplicate_name_detected() {
     assert!(!violations.is_empty(), "should detect duplicate name");
     let v = violations
         .iter()
-        .find(|v| v.invariant == Some(6))
-        .expect("should have invariant 6 violation");
+        .find(|v| matches!(v.details, ViolationDetails::DuplicateName { .. }))
+        .expect("should have a DuplicateName violation");
     assert!(
         v.description.contains("name"),
         "description should mention name: {}",
@@ -95,8 +96,8 @@ fn invalid_heading_in_block_detected() {
     assert!(!violations.is_empty(), "should detect heading in block");
     let v = violations
         .iter()
-        .find(|v| v.invariant == Some(8))
-        .expect("should have invariant 8 violation");
+        .find(|v| matches!(v.details, ViolationDetails::HeadingInContent { .. }))
+        .expect("should have a HeadingInContent violation");
     assert!(
         v.description.contains("heading"),
         "description should mention heading: {}",
@@ -116,8 +117,8 @@ fn invalid_missing_metadata_detected() {
     );
     let v = violations
         .iter()
-        .find(|v| v.invariant.is_none())
-        .expect("should have structural (non-invariant) violation");
+        .find(|v| matches!(v.details, ViolationDetails::MissingMetadataField { .. }))
+        .expect("should have a MissingMetadataField violation");
     assert!(
         v.description.contains("name"),
         "description should mention missing name: {}",
