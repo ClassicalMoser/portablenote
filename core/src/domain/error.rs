@@ -74,8 +74,14 @@ pub enum DomainError {
     #[error("Edge {0} not found")]
     EdgeNotFound(Uuid),
 
+    #[error("Block name must not be empty")]
+    EmptyName,
+
     #[error("Name '{0}' is already in use by block {1}")]
     NameConflict(String, Uuid),
+
+    #[error("ID {0} is already in use")]
+    DuplicateId(Uuid),
 
     #[error("Block {0} has {1} incoming edge(s); use cascade to force deletion")]
     HasIncomingEdges(Uuid, usize),
@@ -95,15 +101,6 @@ pub enum DomainError {
     #[error("Section {0} not found in document")]
     SectionNotFound(Uuid),
 
-    #[error("Save conflict: artifact modified since base_version {0}")]
-    SaveConflict(u64),
-
-    #[error("Validation failed: {0}")]
-    ValidationFailed(String),
-
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Parse error: {0}")]
-    Parse(String),
+    #[error("Section order must contain exactly the same block UUIDs as current sections")]
+    InvalidSectionOrder,
 }

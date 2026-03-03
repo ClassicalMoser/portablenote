@@ -1,19 +1,19 @@
 mod common;
 
-use portablenote_core::queries;
+use portablenote_core::domain::queries;
 use uuid::Uuid;
 
-fn with_refs_vault() -> portablenote_core::types::Vault {
+fn with_refs_vault() -> portablenote_core::domain::types::Vault {
     let dir = common::spec_dir().join("valid").join("with-refs");
     common::load_vault(&dir)
 }
 
-fn with_orphans_vault() -> portablenote_core::types::Vault {
+fn with_orphans_vault() -> portablenote_core::domain::types::Vault {
     let dir = common::spec_dir().join("valid").join("with-orphans");
     common::load_vault(&dir)
 }
 
-fn minimal_vault() -> portablenote_core::types::Vault {
+fn minimal_vault() -> portablenote_core::domain::types::Vault {
     let dir = common::spec_dir().join("valid").join("minimal");
     common::load_vault(&dir)
 }

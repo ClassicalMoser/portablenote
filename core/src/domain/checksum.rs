@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::types::Vault;
+use super::types::Vault;
 
 /// Compute the canonical SHA256 checksum of a vault's source artifacts.
 ///
@@ -14,8 +14,7 @@ use crate::types::Vault;
 ///      Each document contributes: `doc:<uuid>\nroot:<root_uuid>\n`
 ///      followed by sections in their declared order (order is semantically
 ///      significant for compositions — not sorted):
-///        `section:<block_uuid>\n`
-///        `sub:<block_uuid>\n`  (for each subsection, in order)
+///      `section:<block_uuid>\n`, then for each subsection `sub:<block_uuid>\n`
 ///
 /// The result is `sha256:<hex>`.
 ///
@@ -54,7 +53,7 @@ pub fn compute(vault: &Vault) -> String {
     }
 
     let hash = hasher.finalize();
-    format!("sha256:{:x}", hash)
+    format!("sha256:{hash:x}")
 }
 
 /// Returns `true` if the vault's source artifacts no longer match the checksum
@@ -72,7 +71,7 @@ pub fn is_drifted(vault: &Vault) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::*;
+    use crate::domain::types::*;
     use chrono::Utc;
     use std::collections::HashMap;
 
@@ -101,6 +100,7 @@ mod tests {
                 edges: Vec::new(),
             },
             documents: HashMap::new(),
+            version: 0,
         }
     }
 
@@ -178,14 +178,17 @@ mod tests {
         v1.blocks.insert(id_b, make_block(id_b, "B", ""));
 
         let mut v2 = v1.clone();
-        v2.documents.insert(doc_id, Document {
-            id: doc_id,
-            root: id_a,
-            sections: vec![Section {
-                block: id_b,
-                subsections: vec![],
-            }],
-        });
+        v2.documents.insert(
+            doc_id,
+            Document {
+                id: doc_id,
+                root: id_a,
+                sections: vec![Section {
+                    block: id_b,
+                    subsections: vec![],
+                }],
+            },
+        );
 
         assert_ne!(compute(&v1), compute(&v2));
     }
@@ -198,24 +201,42 @@ mod tests {
         let doc_id = Uuid::parse_str("00000000-0000-4000-a000-0000000000d1").unwrap();
 
         let mut v1 = empty_vault();
-        v1.documents.insert(doc_id, Document {
-            id: doc_id,
-            root: id_a,
-            sections: vec![
-                Section { block: id_b, subsections: vec![] },
-                Section { block: id_c, subsections: vec![] },
-            ],
-        });
+        v1.documents.insert(
+            doc_id,
+            Document {
+                id: doc_id,
+                root: id_a,
+                sections: vec![
+                    Section {
+                        block: id_b,
+                        subsections: vec![],
+                    },
+                    Section {
+                        block: id_c,
+                        subsections: vec![],
+                    },
+                ],
+            },
+        );
 
         let mut v2 = empty_vault();
-        v2.documents.insert(doc_id, Document {
-            id: doc_id,
-            root: id_a,
-            sections: vec![
-                Section { block: id_c, subsections: vec![] },
-                Section { block: id_b, subsections: vec![] },
-            ],
-        });
+        v2.documents.insert(
+            doc_id,
+            Document {
+                id: doc_id,
+                root: id_a,
+                sections: vec![
+                    Section {
+                        block: id_c,
+                        subsections: vec![],
+                    },
+                    Section {
+                        block: id_b,
+                        subsections: vec![],
+                    },
+                ],
+            },
+        );
 
         assert_ne!(compute(&v1), compute(&v2));
     }

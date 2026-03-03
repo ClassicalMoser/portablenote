@@ -80,14 +80,6 @@ pub struct ChecksumMismatch {
     pub actual: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SaveConflict {
-    pub command_type: String,
-    pub base_version: u64,
-    pub current_version: u64,
-    pub artifact_id: Uuid,
-}
-
 /// Envelope for all domain events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Event {
@@ -104,5 +96,4 @@ pub enum Event {
     EdgeRemoved(EdgeRemoved),
     VaultOpened(VaultOpened),
     ChecksumMismatch(ChecksumMismatch),
-    SaveConflict(SaveConflict),
 }

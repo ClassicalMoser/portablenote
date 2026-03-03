@@ -1,7 +1,7 @@
 mod common;
 
-use portablenote_core::error::ViolationDetails;
-use portablenote_core::invariants::validate_vault;
+use portablenote_core::domain::error::ViolationDetails;
+use portablenote_core::domain::invariants::validate_vault;
 
 // --- Valid vaults: zero violations ---
 

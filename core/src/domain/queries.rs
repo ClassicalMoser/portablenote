@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use uuid::Uuid;
 
-use crate::types::{Block, Edge, Vault};
+use super::types::{Block, Edge, Vault};
 
 /// Resolve a block name to its UUID via the manifest name index.
 pub fn resolve_name(vault: &Vault, name: &str) -> Option<Uuid> {
@@ -64,7 +64,7 @@ pub fn backlinks(vault: &Vault, block_id: Uuid) -> Vec<Uuid> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{BlockGraph, Manifest};
+    use crate::domain::types::{BlockGraph, Manifest};
     use chrono::Utc;
     use std::collections::HashMap;
 
@@ -97,6 +97,7 @@ mod tests {
                 edges: Vec::new(),
             },
             documents: HashMap::new(),
+            version: 0,
         }
     }
 
@@ -127,6 +128,7 @@ mod tests {
                 edges: vec![make_edge(edge_id, a, b)],
             },
             documents: HashMap::new(),
+            version: 0,
         }
     }
 
@@ -134,7 +136,10 @@ mod tests {
     fn resolve_name_hit() {
         let vault = two_block_vault();
         let id = resolve_name(&vault, "Alpha").unwrap();
-        assert_eq!(id, Uuid::parse_str("00000000-0000-4000-a000-000000000001").unwrap());
+        assert_eq!(
+            id,
+            Uuid::parse_str("00000000-0000-4000-a000-000000000001").unwrap()
+        );
     }
 
     #[test]

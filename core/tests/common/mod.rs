@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use portablenote_core::types::*;
+use portablenote_core::domain::types::*;
 use uuid::Uuid;
 
 /// Resolve the spec/compliance/ directory relative to the crate root.
@@ -27,6 +27,7 @@ pub fn load_vault(vault_dir: &Path) -> Vault {
         blocks,
         graph,
         documents,
+        version: 0,
     }
 }
 

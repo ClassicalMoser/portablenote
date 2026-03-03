@@ -2,8 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use uuid::Uuid;
 
-use crate::error::{Violation, ViolationDetails};
-use crate::types::Vault;
+use super::content;
+use super::error::{Violation, ViolationDetails};
+use super::types::Vault;
 
 /// Validate all spec invariants plus structural checks.
 /// Returns an empty vec if the vault is fully conformant.
@@ -152,8 +153,8 @@ fn check_inline_ref_annotations(vault: &Vault, violations: &mut Vec<Violation>) 
         .collect();
 
     for block in vault.blocks.values() {
-        let inline_refs = extract_inline_refs(&block.content);
-        let footer_map = extract_footer_annotations(&block.content);
+        let inline_refs = content::extract_inline_refs(&block.content);
+        let footer_map = content::extract_footer_annotations(&block.content);
 
         for ref_name in &inline_refs {
             if !footer_map.contains_key(ref_name.as_str()) {
@@ -190,11 +191,11 @@ fn check_inline_ref_annotations(vault: &Vault, violations: &mut Vec<Violation>) 
 /// Every footer annotation must map to a name that resolves to an existing block.
 fn check_footer_annotation_targets(vault: &Vault, violations: &mut Vec<Violation>) {
     for block in vault.blocks.values() {
-        let footer_map = extract_footer_annotations(&block.content);
+        let footer_map = content::extract_footer_annotations(&block.content);
 
         for (name, target_id) in &footer_map {
             let target_exists = vault.blocks.contains_key(target_id);
-            let name_resolves = vault.manifest.names.get(*name) == Some(target_id);
+            let name_resolves = vault.manifest.names.get(name.as_str()) == Some(target_id);
 
             if !target_exists || !name_resolves {
                 violations.push(Violation {
@@ -203,7 +204,7 @@ fn check_footer_annotation_targets(vault: &Vault, violations: &mut Vec<Violation
                     ),
                     details: ViolationDetails::DanglingFooterAnnotation {
                         block_id: block.id,
-                        name: name.to_string(),
+                        name: name.clone(),
                     },
                 });
             }
@@ -252,7 +253,7 @@ fn check_uuid_filename_match(vault: &Vault, violations: &mut Vec<Violation>) {
 /// No block content may contain heading syntax (h1-h6) outside fenced code blocks.
 fn check_no_headings_in_content(vault: &Vault, violations: &mut Vec<Violation>) {
     for block in vault.blocks.values() {
-        if let Some((level, text)) = find_heading_outside_fence(&block.content) {
+        if let Some((level, text)) = content::find_heading_outside_fence(&block.content) {
             violations.push(Violation {
                 description: "Block content contains heading syntax outside fenced code block"
                     .to_string(),
@@ -263,146 +264,5 @@ fn check_no_headings_in_content(vault: &Vault, violations: &mut Vec<Violation>) 
                 },
             });
         }
-    }
-}
-
-// --- Content parsing helpers ---
-
-/// Extract all `[[Name]]` inline references from block content.
-fn extract_inline_refs(content: &str) -> Vec<String> {
-    let mut refs = Vec::new();
-    let mut rest = content;
-
-    while let Some(start) = rest.find("[[") {
-        let after = &rest[start + 2..];
-        if let Some(end) = after.find("]]") {
-            let name = after[..end].trim();
-            if !name.is_empty() {
-                refs.push(name.to_string());
-            }
-            rest = &after[end + 2..];
-        } else {
-            break;
-        }
-    }
-
-    refs
-}
-
-/// Extract footer annotations: `[Name]: uuid:<uuid>` lines after `<!-- refs -->`.
-fn extract_footer_annotations(content: &str) -> HashMap<&str, Uuid> {
-    let mut map = HashMap::new();
-
-    let Some(refs_pos) = content.find("<!-- refs -->") else {
-        return map;
-    };
-
-    let footer = &content[refs_pos..];
-
-    for line in footer.lines() {
-        let line = line.trim();
-        if !line.starts_with('[') {
-            continue;
-        }
-        if let Some(close) = line.find("]: uuid:") {
-            let name = &line[1..close];
-            let uuid_str = &line[close + 8..];
-            if let Ok(uuid) = Uuid::parse_str(uuid_str.trim()) {
-                map.insert(name, uuid);
-            }
-        }
-    }
-
-    map
-}
-
-/// Find the first heading (# through ######) outside a fenced code block.
-/// Returns `(level, heading_text)` if found.
-fn find_heading_outside_fence(content: &str) -> Option<(u8, String)> {
-    let mut in_fence = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim_start();
-
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            in_fence = !in_fence;
-            continue;
-        }
-
-        if in_fence {
-            continue;
-        }
-
-        if let Some(stripped) = trimmed.strip_prefix('#') {
-            let mut level: u8 = 1;
-            let mut rest = stripped;
-
-            while let Some(s) = rest.strip_prefix('#') {
-                level += 1;
-                rest = s;
-                if level > 6 {
-                    break;
-                }
-            }
-
-            if level <= 6 {
-                if let Some(s) = rest.strip_prefix(' ') {
-                    let text = s.trim().to_string();
-                    if !text.is_empty() {
-                        return Some((level, text));
-                    }
-                }
-            }
-        }
-    }
-
-    None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn extract_inline_refs_basic() {
-        let content = "See [[Getting Started]] and [[Advanced Topics]].";
-        let refs = extract_inline_refs(content);
-        assert_eq!(refs, vec!["Getting Started", "Advanced Topics"]);
-    }
-
-    #[test]
-    fn extract_inline_refs_empty() {
-        let refs = extract_inline_refs("No refs here.");
-        assert!(refs.is_empty());
-    }
-
-    #[test]
-    fn extract_footer_annotations_basic() {
-        let content = "Some text.\n\n<!-- refs -->\n[Getting Started]: uuid:20000000-0000-4000-a000-000000000002\n[Advanced Topics]: uuid:20000000-0000-4000-a000-000000000003\n";
-        let map = extract_footer_annotations(content);
-        assert_eq!(map.len(), 2);
-        assert!(map.contains_key("Getting Started"));
-        assert!(map.contains_key("Advanced Topics"));
-    }
-
-    #[test]
-    fn find_heading_outside_fence_detects() {
-        let content = "Some text.\n\n## Bad Heading\n\nMore text.";
-        let result = find_heading_outside_fence(content);
-        assert_eq!(result, Some((2, "Bad Heading".to_string())));
-    }
-
-    #[test]
-    fn find_heading_inside_fence_ignored() {
-        let content = "Text.\n\n```\n## Not a heading\n```\n\nMore text.";
-        let result = find_heading_outside_fence(content);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn find_heading_none() {
-        let content = "Plain text with no headings.";
-        let result = find_heading_outside_fence(content);
-        assert!(result.is_none());
     }
 }

@@ -53,10 +53,18 @@ pub struct BlockGraph {
     pub edges: Vec<Edge>,
 }
 
+/// Read-only snapshot of a fully loaded vault.
+///
+/// Used for full-state validation (`invariants::validate_vault`) and checksum
+/// computation at open/import time. Not the unit of command execution — commands
+/// operate on individual artifacts loaded through port traits.
 #[derive(Debug, Clone)]
 pub struct Vault {
     pub manifest: Manifest,
     pub blocks: HashMap<Uuid, Block>,
     pub graph: BlockGraph,
     pub documents: HashMap<Uuid, Document>,
+    /// Monotonically increasing in-memory mutation counter.
+    /// Bumped by every aggregate method. Reset to 0 on load.
+    pub version: u64,
 }

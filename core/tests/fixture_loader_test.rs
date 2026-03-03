@@ -1,6 +1,6 @@
 mod common;
 
-use portablenote_core::checksum;
+use portablenote_core::domain::checksum;
 
 #[test]
 fn valid_vaults_have_no_drift() {
