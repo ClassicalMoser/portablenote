@@ -119,7 +119,7 @@ The result is stored as `sha256:<hex>`. On open, the implementation recomputes a
 
 ## 2. Blocks (`/blocks`)
 
-The heap. Every block is a file in `/blocks`, named by its UUID with a format extension. Blocks are the primary entities of the vault — the named semantic units from which all knowledge is built.
+The heap. Every block is a file in `/blocks`, named by its human-readable name with a format extension. Blocks are the primary entities of the vault — the named semantic units from which all knowledge is built.
 
 ### What Is a Block
 
@@ -127,13 +127,33 @@ A block is an **author-bounded semantic unit**. It is as large or small as the i
 
 When a heading is encountered during parsing, it ends the current block and begins a new one. The heading text becomes the new block's `name`. This is the only block boundary mechanism.
 
-### Naming Convention
+### Filename Convention
+
+Block files are named by their human-readable `name`, percent-encoded for filesystem safety, with a format extension:
 
 ```
-/blocks/<uuid>.<ext>
+/blocks/<percent-encoded-name>.<ext>
 ```
 
-For the Markdown format: `/blocks/a3f9b2c1-....md`
+For example: `/blocks/Getting Started.md`, `/blocks/Café Culture.md`, `/blocks/Notes%3A Part 1.md`
+
+#### Percent-Encoding Algorithm
+
+The filename is derived from the block's `name` metadata field using RFC 3986 percent-encoding over the following restricted character set:
+
+| Encode | Characters |
+|---|---|
+| Filesystem-unsafe | `/ \ : * ? " < > \|` |
+| Control characters | U+0000–U+001F, U+007F |
+| Percent literal | `%` (to avoid ambiguity) |
+
+All other characters — including spaces, unicode, and common punctuation — pass through unmodified. Unicode is normalized to NFC before encoding.
+
+The filename is a **derived projection** of the metadata `name`, not the source of truth. The metadata in the HTML comment header is always authoritative. If a filename does not match `encode(metadata.name) + extension`, the implementation corrects the filename on open.
+
+#### Filename Length
+
+Encoded filenames are truncated to 200 bytes (UTF-8). Names that exceed this after encoding are truncated and disambiguated with a numeric suffix: `Very Long Name That Exceeds... (2).md`. This limit accommodates all major filesystem path component limits (255 bytes on ext4, NTFS, HFS+) with room for the extension.
 
 ### Block Metadata
 
@@ -154,17 +174,18 @@ The metadata is YAML inside an HTML comment. Content follows immediately after t
 
 | Field | Required | Description |
 |---|---|---|
-| `id` | Yes | UUID v4. Permanent. Never changes. Must match filename. |
-| `name` | Yes | Human-readable name. Vault-wide unique. Mutable. The linking handle. Defaults to first line of content on creation. |
+| `id` | Yes | UUID v4. Permanent. Never changes. The canonical identity in the graph. |
+| `name` | Yes | Human-readable name. Vault-wide unique (case-insensitive). Mutable. The linking handle. Defaults to first line of content on creation. |
 | `created` | Yes | ISO 8601 creation timestamp. |
 | `modified` | Yes | ISO 8601 last modification timestamp. Updated on every content mutation. |
 
 ### Name Rules
 
-- Names are vault-wide unique. No two blocks may share a name at any time.
+- Names are **vault-wide unique, case-insensitive**. No two blocks may share a name that differs only by capitalization. `Notes` and `notes` are a collision. This ensures filenames are unambiguous on all platforms (Linux, macOS, Windows).
 - On creation, `name` defaults to the first line of the block's content, truncated to 120 characters.
 - On collision, a numeric suffix is appended automatically: `Getting Started (2)`.
 - Name and content are **decoupled after creation.** Editing content never changes `name`. Renaming never changes content. The name is a stable linking handle, not a content mirror.
+- On rename, the implementation updates the filename on disk to match the new encoded name. This is an infrastructure concern — the domain returns the rename result, the adapter performs the filesystem operation.
 
 ### Markdown Content Rules
 
@@ -365,6 +386,8 @@ Every successful command emits a domain event. Events are not persisted in v0.
 
 ## 6. Validation Invariants
 
+### Domain Invariants
+
 These invariants must hold after every mutation. Conforming implementations enforce all of them.
 
 1. Every UUID in `block-graph.json` source or target fields exists in the heap.
@@ -373,10 +396,15 @@ These invariants must hold after every mutation. Conforming implementations enfo
 4. `block-graph.json` contains only block → block edges.
 5. Every `[[Name]]` inline reference in any block's content has a corresponding footer annotation and a corresponding edge in `block-graph.json`.
 6. Every footer annotation maps to a name that resolves to an existing block in the heap.
-7. Block names are vault-wide unique. No two blocks share a `name` at any time.
-8. Every block file UUID matches its metadata `id` field.
-9. No block content contains heading syntax (h1–h6) outside fenced code blocks when format is `"markdown"`.
-10. The manifest checksum reflects the current state of all source artifacts.
+7. Block names are vault-wide unique (case-insensitive). No two blocks share a `name` that differs only by capitalization.
+8. No block content contains heading syntax (h1–h6) outside fenced code blocks when format is `"markdown"`.
+
+### Load-Time Rules
+
+These rules are enforced when a vault is opened, not after every mutation. They concern on-disk representation rather than domain state.
+
+9. Every block filename matches `encode(metadata.name) + extension`. The metadata `name` is authoritative; mismatched filenames are corrected on open (not treated as a validation failure).
+10. The manifest checksum reflects the current state of all source artifacts. Mismatch triggers drift detection and triage — see §1 Checksum Computation.
 
 ---
 

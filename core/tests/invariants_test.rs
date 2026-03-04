@@ -70,19 +70,39 @@ fn invalid_dangling_uuid_detected() {
 }
 
 #[test]
+fn invalid_duplicate_uuid_detected() {
+    let dir = common::spec_dir().join("invalid").join("duplicate-uuid");
+    let duplicates = common::find_duplicate_uuids(&dir);
+
+    assert!(
+        !duplicates.is_empty(),
+        "should detect duplicate UUIDs across block files"
+    );
+    assert!(
+        duplicates.contains(
+            &uuid::Uuid::parse_str("51000000-0000-4000-a000-000000000001").unwrap()
+        ),
+        "expected duplicated UUID not found in: {duplicates:?}"
+    );
+}
+
+#[test]
 fn invalid_duplicate_name_detected() {
     let dir = common::spec_dir().join("invalid").join("duplicate-name");
     let vault = common::load_vault(&dir);
     let violations = validate_vault(&vault);
 
-    assert!(!violations.is_empty(), "should detect duplicate name");
+    assert!(
+        !violations.is_empty(),
+        "should detect duplicate name (case-insensitive)"
+    );
     let v = violations
         .iter()
         .find(|v| matches!(v.details, ViolationDetails::DuplicateName { .. }))
         .expect("should have a DuplicateName violation");
     assert!(
-        v.description.contains("name"),
-        "description should mention name: {}",
+        v.description.contains("case-insensitive"),
+        "description should mention case-insensitive: {}",
         v.description
     );
 }

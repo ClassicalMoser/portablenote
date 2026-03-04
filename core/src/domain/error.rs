@@ -43,10 +43,6 @@ pub enum ViolationDetails {
         name: String,
         block_ids: Vec<Uuid>,
     },
-    UuidMismatch {
-        file_uuid: Uuid,
-        metadata_uuid: Uuid,
-    },
     HeadingInContent {
         block_id: Uuid,
         heading_text: String,

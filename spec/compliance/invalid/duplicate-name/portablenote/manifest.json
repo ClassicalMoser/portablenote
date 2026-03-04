@@ -1,9 +1,10 @@
 {
-  "vault_id": "00000000-0000-4000-a000-000000000011",
+  "vault_id": "00000000-0000-4000-a000-000000000012",
   "spec_version": "0.1.0",
   "format": "markdown",
-  "checksum": "sha256:a76ce21541dc45ba4a6122e05f960fb52d43b1b8a9bcf93aea52290e8e64069a",
+  "checksum": "sha256:placeholder",
   "names": {
-    "Duplicate Name": "51000000-0000-4000-a000-000000000001"
+    "Meeting Notes": "52000000-0000-4000-a000-000000000001",
+    "meeting notes": "52000000-0000-4000-a000-000000000002"
   }
 }

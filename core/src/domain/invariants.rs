@@ -18,12 +18,12 @@ pub fn validate_vault(vault: &Vault) -> Vec<Violation> {
 
     check_block_metadata(vault, &mut violations);
     check_edge_endpoints(vault, &mut violations);
+    check_edges_are_block_to_block(vault, &mut violations);
     check_document_block_refs(vault, &mut violations);
     check_document_acyclicity(vault, &mut violations);
     check_inline_ref_annotations(vault, &mut violations);
     check_footer_annotation_targets(vault, &mut violations);
     check_name_uniqueness(vault, &mut violations);
-    check_uuid_filename_match(vault, &mut violations);
     check_no_headings_in_content(vault, &mut violations);
 
     violations
@@ -64,6 +64,24 @@ fn check_edge_endpoints(vault: &Vault, violations: &mut Vec<Violation>) {
                     edge_id: edge.id,
                     dangling_uuid: edge.target,
                     field: "target".to_string(),
+                },
+            });
+        }
+    }
+}
+
+/// Edges must connect blocks to blocks — every endpoint must be a block.
+/// This is a type constraint, distinct from `check_edge_endpoints` which is a
+/// referential integrity check. In the current model they produce identical
+/// results because only blocks exist in the heap. They diverge if non-block
+/// entities (composition nodes, etc.) are later added to the UUID space.
+fn check_edges_are_block_to_block(vault: &Vault, violations: &mut Vec<Violation>) {
+    for edge in &vault.graph.edges {
+        if !vault.blocks.contains_key(&edge.source) || !vault.blocks.contains_key(&edge.target) {
+            violations.push(Violation {
+                description: "Edge endpoint is not a block".to_string(),
+                details: ViolationDetails::InvalidEdgeEndpoint {
+                    edge_id: edge.id,
                 },
             });
         }
@@ -212,38 +230,29 @@ fn check_footer_annotation_targets(vault: &Vault, violations: &mut Vec<Violation
     }
 }
 
-/// Block names must be vault-wide unique.
+/// Block names must be vault-wide unique (case-insensitive).
+/// "Meeting Notes" and "meeting notes" are considered duplicates.
 fn check_name_uniqueness(vault: &Vault, violations: &mut Vec<Violation>) {
-    let mut names: HashMap<&str, Vec<Uuid>> = HashMap::new();
+    let mut names: HashMap<String, Vec<(String, Uuid)>> = HashMap::new();
 
     for block in vault.blocks.values() {
         if !block.name.is_empty() {
-            names.entry(&block.name).or_default().push(block.id);
+            names
+                .entry(block.name.to_lowercase())
+                .or_default()
+                .push((block.name.clone(), block.id));
         }
     }
 
-    for (name, ids) in &names {
-        if ids.len() > 1 {
+    for entries in names.values() {
+        if entries.len() > 1 {
+            let display_name = &entries[0].0;
+            let ids: Vec<Uuid> = entries.iter().map(|(_, id)| *id).collect();
             violations.push(Violation {
-                description: format!("Multiple blocks share the name '{name}'"),
+                description: format!("Multiple blocks share the name '{display_name}' (case-insensitive)"),
                 details: ViolationDetails::DuplicateName {
-                    name: name.to_string(),
-                    block_ids: ids.clone(),
-                },
-            });
-        }
-    }
-}
-
-/// Every block file's UUID (filename stem) must match the `id` field in its metadata.
-fn check_uuid_filename_match(vault: &Vault, violations: &mut Vec<Violation>) {
-    for (&file_uuid, block) in &vault.blocks {
-        if file_uuid != block.id {
-            violations.push(Violation {
-                description: "Block file UUID does not match metadata id".to_string(),
-                details: ViolationDetails::UuidMismatch {
-                    file_uuid,
-                    metadata_uuid: block.id,
+                    name: display_name.clone(),
+                    block_ids: ids,
                 },
             });
         }

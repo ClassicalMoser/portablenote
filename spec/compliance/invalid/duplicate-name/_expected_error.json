@@ -1,11 +1,10 @@
 {
-  "invariant": 7,
-  "description": "Two blocks share the same name",
+  "description": "Two blocks share the same name (case-insensitive)",
   "details": {
-    "name": "Duplicate Name",
+    "name_lowercase": "meeting notes",
     "block_ids": [
-      "51000000-0000-4000-a000-000000000001",
-      "51000000-0000-4000-a000-000000000002"
+      "52000000-0000-4000-a000-000000000001",
+      "52000000-0000-4000-a000-000000000002"
     ]
   }
 }

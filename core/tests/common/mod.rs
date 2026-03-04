@@ -56,18 +56,47 @@ fn load_blocks(blocks_dir: &Path) -> HashMap<Uuid, Block> {
             continue;
         }
 
-        let file_uuid = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .expect("Block filename is not a valid UUID");
-
         let raw = fs::read_to_string(&path).expect("Failed to read block file");
-        let block = parse_block_file(file_uuid, &raw);
-        blocks.insert(file_uuid, block);
+        let block = parse_block_file(&raw);
+        blocks.insert(block.id, block);
     }
 
     blocks
+}
+
+/// Scan a blocks directory for duplicate UUIDs in metadata.
+/// Returns a list of UUIDs that appear in more than one file.
+/// This detects corruption that HashMap loading would silently mask.
+#[allow(dead_code)]
+pub fn find_duplicate_uuids(vault_dir: &Path) -> Vec<Uuid> {
+    let blocks_dir = vault_dir.join("portablenote").join("blocks");
+    if !blocks_dir.exists() {
+        return Vec::new();
+    }
+
+    let mut seen: HashMap<Uuid, usize> = HashMap::new();
+
+    for entry in fs::read_dir(&blocks_dir).expect("Failed to read blocks directory") {
+        let entry = entry.expect("Failed to read directory entry");
+        let path = entry.path();
+
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+
+        let raw = fs::read_to_string(&path).expect("Failed to read block file");
+        let (metadata_str, _) = extract_html_comment_metadata(&raw);
+        let metadata = parse_yaml_metadata(&metadata_str);
+
+        if let Some(id) = metadata.get("id").and_then(|s| Uuid::parse_str(s).ok()) {
+            *seen.entry(id).or_insert(0) += 1;
+        }
+    }
+
+    seen.into_iter()
+        .filter(|(_, count)| *count > 1)
+        .map(|(id, _)| id)
+        .collect()
 }
 
 fn load_documents(docs_dir: &Path) -> HashMap<Uuid, Document> {
@@ -107,7 +136,7 @@ fn load_documents(docs_dir: &Path) -> HashMap<Uuid, Document> {
 ///
 /// <content>
 /// ```
-fn parse_block_file(file_uuid: Uuid, raw: &str) -> Block {
+fn parse_block_file(raw: &str) -> Block {
     let (metadata_str, content) = extract_html_comment_metadata(raw);
 
     let metadata: HashMap<String, String> = parse_yaml_metadata(&metadata_str);
@@ -115,7 +144,7 @@ fn parse_block_file(file_uuid: Uuid, raw: &str) -> Block {
     let id = metadata
         .get("id")
         .and_then(|s| Uuid::parse_str(s).ok())
-        .unwrap_or(file_uuid);
+        .expect("Block metadata must contain a valid 'id' field");
 
     let name = metadata
         .get("name")

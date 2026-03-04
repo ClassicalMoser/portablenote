@@ -1,0 +1,7 @@
+{
+  "description": "Two blocks share the same UUID in metadata",
+  "details": {
+    "uuid": "51000000-0000-4000-a000-000000000001",
+    "filenames": ["Block Alpha.md", "Block Beta.md"]
+  }
+}
