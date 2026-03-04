@@ -1,3 +1,5 @@
+#![allow(dead_code)] // shared test infra — not every binary uses every function
+
 use portablenote_core::application::ports::{BlockStore, GraphStore, NameIndex};
 use portablenote_core::application::results::{
     AddBlockResult, DeleteBlockCascadeResult, DeleteBlockSafeResult, RenameBlockResult,
@@ -31,7 +33,6 @@ pub fn apply_delete_block_safe(stores: &mut VaultStores, result: DeleteBlockSafe
 
 /// Apply a DeleteBlockCascadeResult: persist reverted blocks, remove all
 /// edges (incoming + outgoing), delete the block, and remove its name.
-#[allow(dead_code)] // will be used when cascade scenarios are added
 pub fn apply_delete_block_cascade(stores: &mut VaultStores, result: DeleteBlockCascadeResult) {
     stores.blocks.save_all(&result.reverted_blocks);
     stores.graph.remove_edges(&result.all_edge_ids);

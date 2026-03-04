@@ -1,3 +1,5 @@
+#![allow(dead_code)] // shared test infra — not every binary uses every type
+
 use std::collections::HashMap;
 
 use uuid::Uuid;
@@ -120,7 +122,6 @@ impl NameIndex for InMemoryNameIndex {
 
 /// Convenience bundle of all four stores for a single vault.
 /// Fields are public for direct assertion access in tests.
-#[allow(dead_code)] // individual fields used progressively as scenarios are added
 pub struct VaultStores {
     pub blocks: InMemoryBlockStore,
     pub graph: InMemoryGraphStore,

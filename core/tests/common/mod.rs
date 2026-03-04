@@ -1,3 +1,5 @@
+#![allow(dead_code)] // shared test infra — not every binary uses every function
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -67,7 +69,6 @@ fn load_blocks(blocks_dir: &Path) -> HashMap<Uuid, Block> {
 /// Scan a blocks directory for duplicate UUIDs in metadata.
 /// Returns a list of UUIDs that appear in more than one file.
 /// This detects corruption that HashMap loading would silently mask.
-#[allow(dead_code)]
 pub fn find_duplicate_uuids(vault_dir: &Path) -> Vec<Uuid> {
     let blocks_dir = vault_dir.join("portablenote").join("blocks");
     if !blocks_dir.exists() {
@@ -201,11 +202,6 @@ fn parse_yaml_metadata(yaml_str: &str) -> HashMap<String, String> {
 }
 
 /// Load the `_expected_error.json` for an invalid vault fixture.
-/// Each test binary that includes `mod common` gets its own copy of this module.
-/// The compiler warns when a binary doesn't call this function, even though it
-/// is used in `fixture_loader_test.rs` and will be used by future invalid-fixture
-/// tests. The suppression is intentional — this is shared test infrastructure.
-#[allow(dead_code)]
 pub fn load_expected_error(vault_dir: &Path) -> serde_json::Value {
     let path = vault_dir.join("_expected_error.json");
     let content = fs::read_to_string(&path).expect("Failed to read _expected_error.json");

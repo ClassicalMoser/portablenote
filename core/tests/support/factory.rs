@@ -1,3 +1,5 @@
+#![allow(dead_code)] // shared test infra — not every binary uses every function
+
 use portablenote_core::domain::types::Vault;
 
 use super::in_memory::{
