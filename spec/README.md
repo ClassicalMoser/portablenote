@@ -3,31 +3,40 @@
 **Version:** 0.1.0-draft  
 **License:** Apache 2.0
 
-This directory contains the machine-readable specification artifacts for the PortableNote format. These are intended to be consumed by any conforming implementation as a dependency or submodule.
+This directory contains the PortableNote format specification and its machine-readable compliance artifacts. These are intended to be consumed by any conforming implementation as a dependency or submodule.
+
+The specification is **implementation-agnostic**. It defines the vault format, artifact schemas, mutation commands, validation invariants, and behavioral contracts. It does not prescribe architecture, language, or tooling.
+
+## Normative Reference
+
+The full specification is in [`portablenote-spec.md`](portablenote-spec.md).
 
 ## Contents
 
 ```
 spec/
-  schemas/                  JSON schemas for vault artifacts
-    manifest.schema.json    Vault manifest
-    block-graph.schema.json Block reference graph
-    document.schema.json    Document composition definition
-  compliance/               Test fixtures for conformance testing
-    valid/                  Vault directories that must pass validation
-    invalid/                Vault directories that must fail with specific errors
-    mutations/              Scenario files: initial vault + command + expected outcome
+  portablenote-spec.md        Normative specification document
+  schemas/                    JSON schemas for vault artifacts
+    manifest.schema.json      Vault manifest
+    block-graph.schema.json   Block reference graph
+    document.schema.json      Document composition definition
+  compliance/                 Test fixtures for conformance testing
+    valid/                    Vault directories that must pass validation
+    invalid/                  Vault directories that must fail with specific errors
+    mutations/                Scenario files: initial vault + command + expected outcome
 ```
 
-## Usage
+## Compliance
 
-Implementations validate their persistence layer against the JSON schemas and run the compliance suite as part of CI. A conforming implementation must:
+A conforming implementation must:
 
-1. Accept every vault in `compliance/valid/` without errors.
-2. Reject every vault in `compliance/invalid/` with the error described in its `_expected_error.json`.
-3. Produce the expected outcome for every scenario in `compliance/mutations/`.
+1. **Accept** every vault in `compliance/valid/` without errors.
+2. **Reject** every vault in `compliance/invalid/` with the error described in its `_expected_error.json`.
+3. **Produce the expected outcome** for every scenario in `compliance/mutations/`.
 
-## Mutation Scenario Format
+Implementations run the compliance suite as part of CI. The spec repo does not contain engine or UI code — only documentation, schemas, and tests.
+
+### Mutation Scenario Format
 
 Each `.json` file in `compliance/mutations/` has the following shape:
 
@@ -46,6 +55,6 @@ Each `.json` file in `compliance/mutations/` has the following shape:
 
 Assertions describe the expected state after the command: block exists/doesn't exist, edge present/absent, name index updated, inline refs updated, etc.
 
-## Normative Reference
+### Keeping the Suite in Sync
 
-The full specification is in [`portablenote-spec.md`](../portablenote-spec.md) at the repository root.
+Every spec change should yield updated fixtures and scenarios. The tests need a well-defined interface (e.g. "load vault from path", "execute command with payload", "assert vault state or error") so that any implementation — regardless of language — can run the same scenarios. Language-agnostic scenarios (JSON describing initial vault + command + expected outcome) keep the suite portable.

@@ -21,7 +21,7 @@ The spec is the contract. The tool is a proof of concept.
 - **Blocks are named semantic units.** A block is author-bounded — as large or small as the idea requires. Its name is its identity in the link system.
 - **Headings are boundaries, not content.** A heading encountered in content ends the current block and begins a new one. Heading level is a rendering concern, determined by document context, not baked into content.
 - **Links are live.** Inline references use human-readable names. The graph watches its members. A rename propagates everywhere automatically.
-- **Documents are views.** A document is an ordered composition of blocks from the heap. The same block may appear in many documents. Rearranging documents never affects the block grid.
+- **Documents are views.** A document is an ordered composition of blocks from the heap. The same block may appear in many documents. Rearranging documents never affects the block graph.
 - **Explicit over derived.** The graph is a first-class artifact, not rebuilt by scanning.
 - **Validation at every mutation.** Invariants hold after every transaction, not eventually.
 - **Git is version control.** Content history is delegated to git or equivalent. Format versioning is handled by the manifest.
@@ -38,20 +38,20 @@ A vault is a directory with the following layout:
   /<composition-name>/       # Rendered .md document trees — one per composition
   /<composition-name>/       # Multiple compositions supported
 
-  /.portablenote/            # Source artifacts (canonical data)
+  /portablenote/             # Source artifacts (canonical data)
     manifest.json            # Vault identity, version, format declaration, checksum
     /blocks                  # Primary — heap of named block files, UUID-named
     block-graph.json         # Primary — typed directed edges between blocks
     /documents               # Optional — one JSON definition file per document composition
 ```
 
-A user opening the vault sees readable, named document trees at the root. The `.portablenote/` directory contains all source artifacts. Like `.git/`, it is hidden by default and non-technical users never need to open it.
+A user opening the vault sees readable, named document trees at the root. The `portablenote/` directory contains all source artifacts — visible, portable, and inspectable without tooling.
 
-All source artifact paths in this spec are relative to `.portablenote/` unless otherwise noted.
+All source artifact paths in this spec are relative to `portablenote/` unless otherwise noted.
 
 The `/blocks` directory and `block-graph.json` are the canonical knowledge base. The `/documents` directory is optional — a vault with no documents is complete and fully navigable via the graph. Rendered output trees are derived and rebuilt on any mutation. They are never edited directly.
 
-The program validates all source artifacts on open and rejects or remediates inconsistencies. Rendered trees are not validated — they are regenerated.
+A conforming implementation validates all source artifacts on open and rejects or remediates inconsistencies. Rendered trees are not validated — they are regenerated.
 
 ---
 
@@ -81,22 +81,39 @@ Declares vault identity, spec version, content format, integrity checksum, and t
 | `vault_id` | UUID v4 | Permanent vault identity. Never changes. |
 | `spec_version` | semver string | PortableNote spec version this vault conforms to. |
 | `format` | string | Content format for all blocks in this vault. `"markdown"` for v0. Extensible. |
-| `checksum` | string | SHA-256 over canonical serialization of all source artifacts. Prefixed `sha256:`. |
+| `checksum` | string | SHA-256 over canonical serialization of blocks, edges, and documents. Prefixed `sha256:`. |
 | `names` | object | Vault-wide name index. Maps every block `name` to its UUID. Updated on every `AddBlock`, `RenameBlock`, and `DeleteBlock`. |
 
 The `names` index is the authoritative name → UUID lookup. It is not included in the checksum computation — it is derived from block metadata and can be reconstructed by scanning `/blocks` if needed.
 
 ### Checksum Computation
 
-```
-checksum = sha256(
-  canonical_json(block-graph.json) +
-  sorted([sha256(block_file) for each file in /blocks]) +
-  sorted([sha256(doc_file) for each file in /documents])  # omitted if /documents is empty
-)
-```
+The checksum is a SHA-256 hash over a canonical byte representation of blocks, edges, and documents. The manifest itself is not included — `names` is a derived index (reconstructable from block metadata), and the remaining manifest fields (`vault_id`, `spec_version`, `format`) are identity/config that do not represent mutable content. Canonical serialization concatenates the following, in order:
 
-Canonical JSON: keys sorted alphabetically, no whitespace. On open, the program recomputes and compares. Mismatch triggers a validation pass and re-sign if the vault is consistent. Mismatch is advisory, not blocking — the user retains full control.
+1. **Blocks**, sorted by UUID (lexicographic on the hyphenated string). Each block contributes:
+   ```
+   block:<uuid>\n<name>\n<content>\n
+   ```
+2. **Edges**, sorted by edge UUID. Each edge contributes:
+   ```
+   edge:<uuid>\n<source>-><target>\n
+   ```
+3. **Documents**, sorted by document UUID. Each document contributes:
+   ```
+   doc:<uuid>\nroot:<root_uuid>\n
+   ```
+   followed by sections in their declared order (order is semantically significant — not sorted):
+   ```
+   section:<block_uuid>\n
+   ```
+   and for each subsection:
+   ```
+   sub:<block_uuid>\n
+   ```
+
+If `/documents` is empty, documents contribute nothing. Block timestamps are excluded — only identity, name, and content participate.
+
+The result is stored as `sha256:<hex>`. On open, the implementation recomputes and compares. Mismatch triggers a validation pass and re-sign if the vault is consistent. Mismatch is advisory, not blocking — the user retains full control.
 
 ---
 
@@ -166,7 +183,7 @@ A block references another block by name using double-bracket syntax:
 See also [[Getting Started]] for more context.
 ```
 
-Inline references use the human-readable `name`, never the UUID. References are live — they resolve at read time against the current heap. When a block is renamed, all inline references to it are updated automatically by the system. A reference to a deleted block renders as a broken reference indicator.
+Inline references use the human-readable `name`, never the UUID. References are live — they resolve at read time against the current heap. When a block is renamed, all inline references to it are updated automatically by the system. When a referenced block is deleted, inline references are reverted to plain text (the `[[brackets]]` are removed, leaving only the name string).
 
 ### Footer Annotations
 
@@ -185,13 +202,13 @@ See also [[Getting Started]] for context. This [[Key Insight]] elaborates furthe
 [Key Insight]: uuid:c7a1e9d4-...
 ```
 
-Footer annotations are maintained by the system, not hand-written by the user. On rename, the system updates the annotation. On deletion of a target block, the annotation is removed and the inline reference becomes a broken link. `block-graph.json` is authoritative — footer annotations are the human-readable, git-diffable record of the same edges.
+Footer annotations are maintained by the system, not hand-written by the user. On rename, the system updates the annotation. On deletion of a target block, the annotation is removed and the inline reference is reverted to plain text. `block-graph.json` is authoritative — footer annotations are the human-readable, git-diffable record of the same edges.
 
 ---
 
 ## 3. Block Reference Graph (`block-graph.json`)
 
-The primary knowledge structure. Typed directed edges between block UUIDs. This is the canonical graph — edges are stored by UUID, not by name, so they survive renames without modification.
+The primary knowledge structure. Directed edges between block UUIDs. This is the canonical graph — edges are stored by UUID, not by name, so they survive renames without modification.
 
 The graph is live. It watches its members. When a block is renamed, the graph does not change — edges are UUID-based — but the system propagates the new name to all footer annotations and inline references in block content.
 
@@ -217,7 +234,6 @@ The graph is live. It watches its members. When a block is renamed, the graph do
 | `id` | UUID v4 | Permanent edge identity. |
 | `source` | UUID v4 | Source block. Must exist in heap. |
 | `target` | UUID v4 | Target block. Must exist in heap. |
-| `tag` | string | Optional. Opaque annotation string. No prescribed vocabulary. Ignored by the system. |
 
 An edge means: this block references that block. The meaning of the relationship lives in the content, not in a system tag.
 
@@ -283,7 +299,7 @@ A document node is a reference to a block UUID plus its position in the hierarch
 - **Documents are flat.** Documents do not nest within documents. Relationships between documents are expressed as block-level reference edges between their respective root blocks.
 - **Acyclic.** A block may not be both an ancestor and a descendant of itself within a document.
 
-The document definition is the sole input to rendering. Walking root → sections → subsections in order produces the output .md document tree (see §8). No separate export format — the document model is the export model.
+The document definition is the sole input to rendering. Walking root → sections → subsections in order produces the output .md document tree (see §7). No separate export format — the document model is the export model.
 
 ### Orphaned Blocks
 
@@ -291,22 +307,9 @@ A block with no edges in `block-graph.json` — no incoming and no outgoing refe
 
 ---
 
-## 5. CQRS Mutation Standards
+## 5. Mutation Standards
 
 All state changes are commands. Queries never mutate state. Validation occurs before commitment. Failed commands are rejected with a descriptive error. Successful commands update the relevant artifact(s) and recompute the checksum.
-
-### Save Model
-
-The primary save model is **manual save**. In-progress edits are local to the client until explicitly committed. This ensures half-written content never hits the graph mid-edit, and propagation side effects (name updates, edge recomputation, checksum) fire once per save, not continuously.
-
-Two automatic save behaviors supplement manual save:
-
-- **Autosave on close.** When the application closes with unsaved changes, they are saved automatically before exit.
-- **Periodic autosave.** Unsaved changes are saved on a configurable interval (default: 5 minutes) to limit drift between the client state and the committed vault.
-
-Every command carries a `base_version` field — the vault state version the client was working against when the command was issued. On save, the application layer checks whether the specific artifact being saved has been mutated since `base_version`. If it has, a `SaveConflict` event is emitted. The client decides how to proceed.
-
-Name propagations from renames that occurred since `base_version` are corrected silently by the server as part of the save transaction — they are not conflicts. Deleted referenced blocks are handled by the existing cascade remediation (inline refs reverted to plain text, warning emitted) — also not conflicts. `SaveConflict` fires only when the artifact itself — block content or document definition — was written by another save since `base_version`.
 
 ### Commands
 
@@ -317,8 +320,8 @@ Name propagations from renames that occurred since `base_version` are corrected 
 | `AddBlock` | Add a new block file to `/blocks`. | UUID unique, name unique, metadata complete. |
 | `RenameBlock` | Change a block's `name`. Propagates to all inline refs and footer annotations vault-wide. | Block exists, new name unique vault-wide. |
 | `MutateBlockContent` | Update block content. Updates `modified` timestamp. | Block exists, content valid for declared format, no heading syntax outside fenced code. |
-| `DeleteBlock(safe)` | Delete block. Fails if incoming reference edges exist. | No incoming edges in `block-graph.json`. |
-| `DeleteBlock(cascade)` | Delete block. Removes all incoming and outgoing edges. Reverts all inline `[[Name]]` references in other blocks to plain text. Removes corresponding footer annotations. Emits warning with counts. | Block exists. |
+| `DeleteBlockSafe` | Delete block. Fails if incoming reference edges exist. | No incoming edges in `block-graph.json`. |
+| `DeleteBlockCascade` | Delete block. Removes all incoming and outgoing edges. Reverts all inline `[[Name]]` references in other blocks to plain text. Removes corresponding footer annotations. Emits warning with counts. | Block exists. |
 
 #### Document Commands
 
@@ -340,13 +343,11 @@ Name propagations from renames that occurred since `base_version` are corrected 
 
 ### Events
 
-Every successful command emits a domain event. Events are consumed by the UI layer via Tauri event bridge. Events are not persisted in v0.
-
-All commands carry a `base_version` field. The application layer validates this on save and emits `SaveConflict` if the relevant artifact changed since `base_version`.
+Every successful command emits a domain event. Events are not persisted in v0.
 
 | Event | Payload |
 |---|---|
-| `BlockAdded` | block UUID, name, type |
+| `BlockAdded` | block UUID, name |
 | `BlockRenamed` | block UUID, old name, new name, refs_updated count |
 | `BlockContentMutated` | block UUID |
 | `BlockDeleted` | block UUID, edges_removed count, inline_refs_reverted count |
@@ -359,7 +360,6 @@ All commands carry a `base_version` field. The application layer validates this 
 | `EdgeRemoved` | edge UUID |
 | `VaultOpened` | vault UUID, checksum_status |
 | `ChecksumMismatch` | expected, actual, drift_summary |
-| `SaveConflict` | command type, base_version, current_version, artifact UUID |
 
 ---
 
@@ -380,34 +380,7 @@ These invariants must hold after every mutation. Conforming implementations enfo
 
 ---
 
-## 7. Import Standard (Markdown Vaults)
-
-Conforming implementations should support import from existing Markdown vaults (Obsidian, Logseq export, plain `.md` directories).
-
-### Heading → Block Boundary Rules
-
-Every heading encountered during import ends the current block and begins a new one. The heading text becomes the new block's `name`. Block content is everything between that heading and the next heading (or end of file).
-
-| Heading | Becomes |
-|---|---|
-| `h1` | Root block. Block `name` = heading text. Document `root` = this block's UUID. Renders as h1. |
-| `h2` | Section block. Added to document `sections`. Renders as h2. |
-| `h3` | Subsection block. Added to parent section's `subsections`. Renders as h3. |
-| `h4+` | New document is created. An `elaborates` edge is added from the h3 subsection block to the new document's root block. Deep hierarchy becomes graph structure. |
-
-On name collision during import, a numeric suffix is appended automatically.
-
-### Wikilink Conversion
-
-`[[Page Name]]` wikilinks are resolved to block names where possible. A resolved wikilink becomes `[[Block Name]]` with a footer annotation mapping the name to the target UUID and a corresponding edge added to `block-graph.json`. Unresolvable wikilinks are preserved as plain text with a warning emitted.
-
-### Metadata Mapping
-
-Existing metadata fields not recognized by the spec are preserved in the block's metadata comment verbatim.
-
----
-
-## 8. Rendered Output
+## 7. Rendered Output
 
 Each composition produces a rendered Markdown document tree at the vault root under `/<composition-name>/`. This replaces the concept of a separate "export" operation — rendering is continuous, not a manual step.
 
@@ -431,140 +404,114 @@ Each composition produces a rendered Markdown document tree at the vault root un
 
 ---
 
+## 8. Import Standard (Markdown Vaults)
+
+Conforming implementations should support import from existing Markdown vaults (Obsidian, Logseq export, plain `.md` directories).
+
+### Heading → Block Boundary Rules
+
+Every heading encountered during import ends the current block and begins a new one. The heading text becomes the new block's `name`. Block content is everything between that heading and the next heading (or end of file).
+
+| Heading | Becomes |
+|---|---|
+| `h1` | Root block. Block `name` = heading text. Document `root` = this block's UUID. Renders as h1. |
+| `h2` | Section block. Added to document `sections`. Renders as h2. |
+| `h3` | Subsection block. Added to parent section's `subsections`. Renders as h3. |
+| `h4+` | New document is created. A reference edge is added from the h3 subsection block to the new document's root block. Deep hierarchy becomes graph structure. |
+
+On name collision during import, a numeric suffix is appended automatically.
+
+### Wikilink Conversion
+
+`[[Page Name]]` wikilinks are resolved to block names where possible. A resolved wikilink becomes `[[Block Name]]` with a footer annotation mapping the name to the target UUID and a corresponding edge added to `block-graph.json`. Unresolvable wikilinks are preserved as plain text with a warning emitted.
+
+### Metadata Mapping
+
+Existing metadata fields not recognized by the spec are preserved in the block's metadata comment verbatim.
+
 ---
 
-## 10. Adapter Interface
+## 9. Content Format Adapter
 
-The content format adapter is a port. The Markdown adapter is the v0 reference implementation. Future adapters (RTF, HTML, Portable Text) implement the same port.
+The content format adapter is a port. The Markdown adapter is the v0 reference implementation. Future adapters (RTF, HTML, Portable Text) implement the same behavioral contract.
 
-### Port Contract
+### Required Capabilities
 
-A conforming adapter must implement:
+A conforming content format adapter must provide:
 
-- `parse(file: &Path) -> Result<BlockContent>` — reads a block file, returns domain content.
-- `serialize(content: &BlockContent, file: &Path) -> Result<()>` — writes domain content to file.
-- `validate_content(content: &str) -> Result<()>` — validates raw content string against format rules.
-- `extract_inline_refs(content: &str) -> Vec<String>` — returns all inline block reference names from `[[Name]]` syntax.
+- **Parse** — Read a block file and extract structured content (metadata, body, footer annotations).
+- **Serialize** — Write structured content back to a block file in the declared format.
+- **Validate** — Check a raw content string against the format's rules (e.g. no headings outside fenced code for Markdown).
+- **Extract inline references** — Return all inline block reference names (`[[Name]]`) from a content string.
 
 ### Format Declaration
 
-Format is declared once per vault in the manifest. All blocks in a vault use the same format. Format migration between vaults requires re-serialization through the adapter port. Mixing formats within a vault is not permitted in v0.
+Format is declared once per vault in the manifest. All blocks in a vault use the same format. Format migration between vaults requires re-serialization through the adapter. Mixing formats within a vault is not permitted in v0.
 
 ---
 
-## 11. Architecture: Core vs. Client
+## Appendix A: Graph Layout Convention (Non-Normative)
 
-The system splits into a **core** (domain + server/local engine) and **clients** (UI). The core is modular and portable — a server process or a local desktop process can run it with no knowledge of the UI. Clients are fully separate and may have multiple implementations (desktop, web, future mobile), typically sharing a common SolidJS-based frontend that talks to the core over an API or IPC.
+Graph visualization metadata is **not a spec artifact**. It is excluded from the checksum, excluded from validation, and not required for compliance. A conforming implementation may ignore it entirely.
 
-### Core (Domain + Engine)
+This convention exists so that implementations that support spatial graph views can share layout data portably. The file travels with the vault but carries no contractual weight.
 
-The core is the only part that touches the vault and enforces invariants. It can run as a library in-process (e.g. desktop app) or as a server process that clients connect to. Boundaries inside the core are hexagonal: distinct concerns, not a single blob.
+### File
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  PORTS (interfaces)                                              │
-│  ContentFormat · Persistence · Search · Render                   │
-├─────────────────────────────────────────────────────────────────┤
-│  DOMAIN          Pure types, commands, queries, invariants.     │
-│                  No I/O, no serde, no format knowledge.          │
-├─────────────────────────────────────────────────────────────────┤
-│  APPLICATION     CQRS handlers, validation, event emission.     │
-│                  Orchestrates domain + ports.                    │
-├─────────────────────────────────────────────────────────────────┤
-│  ADAPTERS        Separate concerns, each implements a port:     │
-│                  · Format (Markdown parse/serialize)             │
-│                  · Persistence (vault read/write, name index)    │
-│                  · Search (text within scope)                     │
-│                  · Render (document → .md tree)                  │
-└─────────────────────────────────────────────────────────────────┘
+/portablenote/graph-layout.json
 ```
 
-Domain, application, and each adapter are separate concerns. Adapters are not a single “infrastructure layer” — they are separate domains (format, persistence, search, render) that implement ports. The application layer depends on the port interfaces only; it does not know which adapter is wired in.
+### Schema
 
-### Clients (UI)
+```json
+{
+  "nodes": {
+    "<block-uuid>": {
+      "x": 0,
+      "y": 0,
+      "size": 0,
+      "weight": 0
+    }
+  },
+  "edges": {
+    "<edge-uuid>": {
+      "tension": 0
+    }
+  }
+}
+```
 
-Clients are **outside** the core. They never touch the vault or the graph directly. They invoke commands and receive results via whatever transport the core exposes. Core behavior is async and save-based; there is no real-time push. (Desktop may use IPC request/response or in-process callbacks; web uses HTTP request/response.)
+All fields within node and edge entries are optional. An empty entry (`{}`) is valid and means "defer to implementation defaults." Absent UUIDs mean the same — no layout opinion for that node or edge.
 
-- **Desktop (native)** — Core runs in-process. Transport is typically IPC (e.g. Tauri commands/events). Tauri is one way to build a desktop client; it is not required by the spec and not the only way to ship a desktop app.
-- **Web** — Core runs as a server. Transport is HTTP (request/response). The same SolidJS frontend can target the server API; no Tauri involved.
-- **Other ports** — Mobile, CLI, etc. are further client implementations that speak to the core over their own transport.
+### Scale
 
-All intelligence (validation, propagation, invariants) lives in the core. The client is a view and an input surface. Multiple client implementations can coexist; they share the same core contract (commands in, results out).
+All values use a single unified scale: **`-100` to `+100`**, where `0` is the implementation's default.
+
+| Field | Range | Meaning of `0` | Meaning of `-100` / `+100` |
+|---|---|---|---|
+| `x` | -100 to +100 | Horizontal center | Far left / far right |
+| `y` | -100 to +100 | Vertical center | Top / bottom |
+| `size` | -100 to +100 | Declared node size | Minimum / maximum |
+| `weight` | -100 to +100 | Declared node weight | Minimum / maximum |
+| `tension` | -100 to +100 | Declared pull strength | Longer / shorter |
+
+### Keying
+
+Nodes are keyed by block UUID. Edges are keyed by edge UUID. This ensures renames do not require layout file updates.
+
+### Stale Entries
+
+Entries referencing UUIDs that no longer exist in the vault are harmless and may be pruned lazily by the implementation. No validation error is raised.
+
+### Compliance Boundary
+
+A conforming implementation **must not** include `graph-layout.json` in the checksum computation. A compliance test should verify: modifying, adding, or removing layout entries does not change the vault checksum.
 
 ---
 
-## 12. Suggested Repository Layout
+## Appendix B: Open Questions for v0.2+
 
-The spec does not mandate a single repo shape. The following reflects the core-vs-client separation and keeps the core portable.
-
-### Core (one repo or subtree)
-
-The core is the engine a server or local process runs. No UI code.
-
-```
-portablenote-core/             # or split into separate crates/packages
-  domain/                      # Pure domain. Types, commands, queries, invariants, events.
-  application/                 # CQRS handlers, ports (interfaces), validation
-  adapters/                    # One concern per adapter, each implements a port
-    format/                    # e.g. Markdown
-    persistence/               # e.g. filesystem vault, name index
-    search/
-    render/
-  README.md
-  LICENSE
-```
-
-The core can be published as a library. A **server** binary (e.g. `portablenote-server`) depends on the core and exposes an HTTP API. A **desktop** binary that embeds the core and uses Tauri for the UI is a different entry point — same core, different transport.
-
-### Clients (separate repo(s) or subtree)
-
-Clients are fully separate from the core. Multiple implementations are expected; most may share a common SolidJS app that is only wired to different transports.
-
-```
-portablenote-client/            # or clients/ with subdirs per target
-  solid/                        # Shared SolidJS app (stores, components, bridge)
-  desktop/                      # Tauri shell: loads solid/, IPC to core in-process
-  web/                          # Same solid/ or build, talks to portablenote-server
-  README.md
-```
-
-- **Tauri** is used only for the desktop client: it provides the native window and the IPC bridge so the SolidJS app can invoke the in-process core. Other client targets (web, future mobile) do not use Tauri.
-- The same SolidJS core (BlockEditor, DocumentView, HeapBrowser, GraphView, etc.) can target desktop (Tauri IPC) or web (HTTP) by swapping the bridge that sends commands and receives responses.
-
-### Summary
-
-| Concern        | Lives in   | Consumed by                          |
-|----------------|------------|--------------------------------------|
-| Domain         | core       | application, all adapters           |
-| Ports          | core       | application (defines), adapters (implement) |
-| Application    | core       | server binary, desktop binary        |
-| Adapters       | core       | server binary, desktop binary        |
-| Server binary  | core       | web client, future mobile client    |
-| Desktop binary | core + Tauri | desktop client (SolidJS in Tauri shell) |
-| SolidJS app    | client     | desktop (via Tauri), web (via fetch/WS) |
-
----
-
-## 13. Spec as Separate Artifact / Compliance
-
-The specification can be maintained and versioned **separately** from any implementation. The spec artifact includes:
-
-- **This document** — normative description of vault structure, invariants, commands, and behavior.
-- **JSON schemas** — for `manifest.json`, document definitions, and `block-graph.json`, so that any implementation can validate artifact shape.
-- **Compliance test suite** — runnable tests that any domain implementation can execute against:
-  - **Valid vaults** — load and satisfy invariants; no errors.
-  - **Invalid vaults** — load and reject or remediate as specified (dangling UUIDs, duplicate names, malformed metadata, etc.).
-  - **Mutation scenarios** — given initial vault state and a command, assert expected outcome (success + resulting state, or rejection with specified error).
-
-Implementations (including the reference core) depend on the spec as a dependency or submodule: they run the compliance suite in CI and treat the schemas as the contract for persistence. The spec repo does not contain engine or UI code — only documentation, schemas, and tests.
-
-**Practical considerations.** Keeping the suite in sync with the spec is ongoing work; every spec change should yield updated fixtures and scenarios. The tests need a well-defined interface (e.g. “load vault from path”, “execute command with payload”, “assert vault state or error”) so that a Rust core, a future Go or TypeScript implementation, or a server API can all run the same scenarios. That may imply a small driver or harness (e.g. CLI or library that takes a vault path and a scenario file and returns pass/fail). Language-agnostic scenarios (e.g. JSON or YAML describing initial vault + command + expected outcome) keep the suite portable. How much of this is realistic for v0 vs. later is an open question — even a minimal set of valid/invalid fixtures and a handful of mutation scenarios would already make the spec runnable and would catch regressions in the reference implementation.
-
----
-
-## Appendix: Open Questions for v0.2+
-
-- Graph traversal queries: which traversal operations belong in the domain layer vs. delegated to infrastructure?
 - Compliance suite scope: minimal (valid/invalid fixtures + a few mutation scenarios) for v0, or fuller scenario coverage? Harness format (CLI, library, language-agnostic scenario files)?
 - Compliance certification: informal for v0 (suite exists, implementations run it); registry or badge model for v1+ if the ecosystem grows.
 - Template system: first-class spec entry or implementation-defined convention?

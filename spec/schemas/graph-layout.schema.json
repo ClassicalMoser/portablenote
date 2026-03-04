@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PortableNote Graph Layout (Non-Normative)",
+  "description": "Optional visualization metadata for graph views. Not a spec artifact — excluded from checksum and validation.",
+  "type": "object",
+  "properties": {
+    "nodes": {
+      "type": "object",
+      "description": "Layout hints keyed by block UUID.",
+      "additionalProperties": {
+        "$ref": "#/$defs/nodeLayout"
+      }
+    },
+    "edges": {
+      "type": "object",
+      "description": "Layout hints keyed by edge UUID.",
+      "additionalProperties": {
+        "$ref": "#/$defs/edgeLayout"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nodeLayout": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": -100,
+          "maximum": 100,
+          "description": "Horizontal position. 0 = center."
+        },
+        "y": {
+          "type": "number",
+          "minimum": -100,
+          "maximum": 100,
+          "description": "Vertical position. 0 = center."
+        },
+        "size": {
+          "type": "number",
+          "minimum": -100,
+          "maximum": 100,
+          "description": "Node size relative to default. 0 = default."
+        },
+        "weight": {
+          "type": "number",
+          "minimum": -100,
+          "maximum": 100,
+          "description": "Node weight relative to default. 0 = default."
+        }
+      },
+      "additionalProperties": false
+    },
+    "edgeLayout": {
+      "type": "object",
+      "properties": {
+        "tension": {
+          "type": "number",
+          "minimum": -100,
+          "maximum": 100,
+          "description": "Edge curvature. 0 = default. Negative = slacker, positive = tighter."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

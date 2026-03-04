@@ -13,9 +13,9 @@ pub fn spec_dir() -> std::path::PathBuf {
 }
 
 /// Load a vault from a fixture directory path.
-/// The path should point to a directory containing `.portablenote/`.
+/// The path should point to a directory containing `portablenote/`.
 pub fn load_vault(vault_dir: &Path) -> Vault {
-    let pn_dir = vault_dir.join(".portablenote");
+    let pn_dir = vault_dir.join("portablenote");
 
     let manifest = load_manifest(&pn_dir.join("manifest.json"));
     let graph = load_block_graph(&pn_dir.join("block-graph.json"));
