@@ -213,7 +213,7 @@ fn check_footer_annotation_targets(vault: &Vault, violations: &mut Vec<Violation
 
         for (name, target_id) in &footer_map {
             let target_exists = vault.blocks.contains_key(target_id);
-            let name_resolves = vault.manifest.names.get(name.as_str()) == Some(target_id);
+            let name_resolves = vault.names.get(name.as_str()) == Some(target_id);
 
             if !target_exists || !name_resolves {
                 violations.push(Violation {

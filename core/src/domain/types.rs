@@ -44,7 +44,6 @@ pub struct Manifest {
     pub spec_version: String,
     pub format: String,
     pub checksum: String,
-    pub names: HashMap<String, Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +63,9 @@ pub struct Vault {
     pub blocks: HashMap<Uuid, Block>,
     pub graph: BlockGraph,
     pub documents: HashMap<Uuid, Document>,
+    /// Name-to-UUID index. Peer artifact to the graph and documents,
+    /// loaded from `names.json` rather than the manifest.
+    pub names: HashMap<String, Uuid>,
     /// Monotonically increasing in-memory mutation counter.
     /// Bumped by every aggregate method. Reset to 0 on load.
     pub version: u64,

@@ -2,8 +2,5 @@
   "vault_id": "00000000-0000-4000-a000-000000000012",
   "spec_version": "0.1.0",
   "format": "markdown",
-  "checksum": "sha256:982bd0e86da6533eb0c541bcb127a4cd9b3b30ebce8d4362f8699df13bc269ab",
-  "names": {
-    "Bad Block": "52000000-0000-4000-a000-000000000001"
-  }
+  "checksum": "sha256:982bd0e86da6533eb0c541bcb127a4cd9b3b30ebce8d4362f8699df13bc269ab"
 }

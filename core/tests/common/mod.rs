@@ -23,12 +23,14 @@ pub fn load_vault(vault_dir: &Path) -> Vault {
     let graph = load_block_graph(&pn_dir.join("block-graph.json"));
     let blocks = load_blocks(&pn_dir.join("blocks"));
     let documents = load_documents(&pn_dir.join("documents"));
+    let names = load_names(&pn_dir.join("names.json"));
 
     Vault {
         manifest,
         blocks,
         graph,
         documents,
+        names,
         version: 0,
     }
 }
@@ -36,6 +38,11 @@ pub fn load_vault(vault_dir: &Path) -> Vault {
 fn load_manifest(path: &Path) -> Manifest {
     let content = fs::read_to_string(path).expect("Failed to read manifest.json");
     serde_json::from_str(&content).expect("Failed to parse manifest.json")
+}
+
+fn load_names(path: &Path) -> HashMap<String, Uuid> {
+    let content = fs::read_to_string(path).expect("Failed to read names.json");
+    serde_json::from_str(&content).expect("Failed to parse names.json")
 }
 
 fn load_block_graph(path: &Path) -> BlockGraph {

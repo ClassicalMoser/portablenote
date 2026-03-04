@@ -18,7 +18,7 @@ use super::types::Vault;
 ///
 /// The result is `sha256:<hex>`.
 ///
-/// Note: `manifest.names` is deliberately excluded — it is derived from block
+/// Note: `names.json` is deliberately excluded — it is derived from block
 /// metadata and can be reconstructed by scanning `/blocks`.
 pub fn compute(vault: &Vault) -> String {
     let mut hasher = Sha256::new();
@@ -92,7 +92,6 @@ mod tests {
                 spec_version: "0.1.0".to_string(),
                 format: "portablenote".to_string(),
                 checksum: String::new(),
-                names: HashMap::new(),
             },
             blocks: HashMap::new(),
             graph: BlockGraph {
@@ -100,6 +99,7 @@ mod tests {
                 edges: Vec::new(),
             },
             documents: HashMap::new(),
+            names: HashMap::new(),
             version: 0,
         }
     }

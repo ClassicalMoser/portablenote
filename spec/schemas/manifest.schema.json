@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "PortableNote Manifest",
-  "description": "Vault identity, spec version, format declaration, checksum, and name index.",
+  "description": "Vault identity, spec version, format declaration, and checksum.",
   "type": "object",
-  "required": ["vault_id", "spec_version", "format", "checksum", "names"],
+  "required": ["vault_id", "spec_version", "format", "checksum"],
   "additionalProperties": false,
   "properties": {
     "vault_id": {
@@ -25,14 +25,6 @@
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$",
       "description": "SHA-256 over canonical serialization of all source artifacts. Prefixed 'sha256:'."
-    },
-    "names": {
-      "type": "object",
-      "description": "Vault-wide name index. Maps every block name (string) to its UUID (string). Authoritative name-to-UUID lookup. Derived from block metadata; can be reconstructed by scanning /blocks.",
-      "additionalProperties": {
-        "type": "string",
-        "format": "uuid"
-      }
     }
   }
 }

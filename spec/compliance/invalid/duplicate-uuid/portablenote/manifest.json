@@ -2,9 +2,5 @@
   "vault_id": "00000000-0000-4000-a000-000000000011",
   "spec_version": "0.1.0",
   "format": "markdown",
-  "checksum": "sha256:placeholder",
-  "names": {
-    "Block Alpha": "51000000-0000-4000-a000-000000000001",
-    "Block Beta": "51000000-0000-4000-a000-000000000001"
-  }
+  "checksum": "sha256:placeholder"
 }

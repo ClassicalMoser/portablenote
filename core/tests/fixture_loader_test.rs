@@ -48,9 +48,9 @@ fn load_with_refs_vault() {
     assert_eq!(vault.blocks.len(), 3);
     assert_eq!(vault.graph.edges.len(), 2);
     assert_eq!(vault.documents.len(), 0);
-    assert_eq!(vault.manifest.names.len(), 3);
+    assert_eq!(vault.names.len(), 3);
 
-    let core_concepts_id = vault.manifest.names.get("Core Concepts").unwrap();
+    let core_concepts_id = vault.names.get("Core Concepts").unwrap();
     let block = &vault.blocks[core_concepts_id];
     assert!(block.content.contains("[[Getting Started]]"));
     assert!(block.content.contains("<!-- refs -->"));

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PortableNote Names Index",
+  "description": "Vault-wide name-to-UUID index. Maps every block name (string) to its UUID (string). Derived from block metadata; can be reconstructed by scanning /blocks.",
+  "type": "object",
+  "additionalProperties": {
+    "type": "string",
+    "format": "uuid"
+  }
+}

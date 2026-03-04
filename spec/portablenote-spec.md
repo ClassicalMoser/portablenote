@@ -40,7 +40,8 @@ A vault is a directory with the following layout:
 
   /portablenote/             # Source artifacts (canonical data)
     manifest.json            # Vault identity, version, format declaration, checksum
-    /blocks                  # Primary — heap of named block files, UUID-named
+    names.json               # Name-to-UUID index (derived from block metadata)
+    /blocks                  # Primary — heap of named block files
     block-graph.json         # Primary — typed directed edges between blocks
     /documents               # Optional — one JSON definition file per document composition
 ```
@@ -57,7 +58,7 @@ A conforming implementation validates all source artifacts on open and rejects o
 
 ## 1. Manifest (`manifest.json`)
 
-Declares vault identity, spec version, content format, integrity checksum, and the vault-wide name index.
+Declares vault identity, spec version, content format, and integrity checksum.
 
 ### Schema
 
@@ -66,11 +67,7 @@ Declares vault identity, spec version, content format, integrity checksum, and t
   "vault_id": "uuid-v4",
   "spec_version": "0.1.0",
   "format": "markdown",
-  "checksum": "sha256:<hex>",
-  "names": {
-    "Getting Started": "uuid-v4",
-    "Key Insight": "uuid-v4"
-  }
+  "checksum": "sha256:<hex>"
 }
 ```
 
@@ -82,13 +79,10 @@ Declares vault identity, spec version, content format, integrity checksum, and t
 | `spec_version` | semver string | PortableNote spec version this vault conforms to. |
 | `format` | string | Content format for all blocks in this vault. `"markdown"` for v0. Extensible. |
 | `checksum` | string | SHA-256 over canonical serialization of blocks, edges, and documents. Prefixed `sha256:`. |
-| `names` | object | Vault-wide name index. Maps every block `name` to its UUID. Updated on every `AddBlock`, `RenameBlock`, and `DeleteBlock`. |
-
-The `names` index is the authoritative name → UUID lookup. It is not included in the checksum computation — it is derived from block metadata and can be reconstructed by scanning `/blocks` if needed.
 
 ### Checksum Computation
 
-The checksum is a SHA-256 hash over a canonical byte representation of blocks, edges, and documents. The manifest itself is not included — `names` is a derived index (reconstructable from block metadata), and the remaining manifest fields (`vault_id`, `spec_version`, `format`) are identity/config that do not represent mutable content. Canonical serialization concatenates the following, in order:
+The checksum is a SHA-256 hash over a canonical byte representation of blocks, edges, and documents. The manifest itself is not included — its fields (`vault_id`, `spec_version`, `format`) are identity/config that do not represent mutable content. The `names.json` index is also excluded — it is derived from block metadata and can be reconstructed by scanning `/blocks`. Canonical serialization concatenates the following, in order:
 
 1. **Blocks**, sorted by UUID (lexicographic on the hyphenated string). Each block contributes:
    ```
@@ -114,6 +108,25 @@ The checksum is a SHA-256 hash over a canonical byte representation of blocks, e
 If `/documents` is empty, documents contribute nothing. Block timestamps are excluded — only identity, name, and content participate.
 
 The result is stored as `sha256:<hex>`. On open, the implementation recomputes and compares. Mismatch triggers a validation pass and re-sign if the vault is consistent. Mismatch is advisory, not blocking — the user retains full control.
+
+---
+
+## 1a. Names Index (`names.json`)
+
+The vault-wide name → UUID lookup. A peer artifact to `block-graph.json` and `/documents`, stored as a sibling of the manifest.
+
+### Schema
+
+```json
+{
+  "Getting Started": "uuid-v4",
+  "Key Insight": "uuid-v4"
+}
+```
+
+A plain JSON object mapping every block `name` (string) to its UUID (string). Updated on every `AddBlock`, `RenameBlock`, and `DeleteBlock`.
+
+The names index is derived from block metadata and can be reconstructed by scanning `/blocks` if needed. It is not included in the checksum computation.
 
 ---
 

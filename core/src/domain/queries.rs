@@ -4,9 +4,9 @@ use uuid::Uuid;
 
 use super::types::{Block, Edge, Vault};
 
-/// Resolve a block name to its UUID via the manifest name index.
+/// Resolve a block name to its UUID via the names index.
 pub fn resolve_name(vault: &Vault, name: &str) -> Option<Uuid> {
-    vault.manifest.names.get(name).copied()
+    vault.names.get(name).copied()
 }
 
 /// Return (outgoing, incoming) edges for a given block UUID.
@@ -89,7 +89,6 @@ mod tests {
                 spec_version: "0.1.0".to_string(),
                 format: "portablenote".to_string(),
                 checksum: String::new(),
-                names: HashMap::new(),
             },
             blocks: HashMap::new(),
             graph: BlockGraph {
@@ -97,6 +96,7 @@ mod tests {
                 edges: Vec::new(),
             },
             documents: HashMap::new(),
+            names: HashMap::new(),
             version: 0,
         }
     }
@@ -120,7 +120,6 @@ mod tests {
                 spec_version: "0.1.0".to_string(),
                 format: "portablenote".to_string(),
                 checksum: String::new(),
-                names,
             },
             blocks,
             graph: BlockGraph {
@@ -128,6 +127,7 @@ mod tests {
                 edges: vec![make_edge(edge_id, a, b)],
             },
             documents: HashMap::new(),
+            names,
             version: 0,
         }
     }

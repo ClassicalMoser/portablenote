@@ -2,10 +2,5 @@
   "vault_id": "00000000-0000-4000-a000-000000000002",
   "spec_version": "0.1.0",
   "format": "markdown",
-  "checksum": "sha256:2ea2b628f9aaafc02701ab0fb3c27489e27d4893c328916e567941a149d430a1",
-  "names": {
-    "Core Concepts": "20000000-0000-4000-a000-000000000001",
-    "Getting Started": "20000000-0000-4000-a000-000000000002",
-    "Advanced Topics": "20000000-0000-4000-a000-000000000003"
-  }
+  "checksum": "sha256:2ea2b628f9aaafc02701ab0fb3c27489e27d4893c328916e567941a149d430a1"
 }

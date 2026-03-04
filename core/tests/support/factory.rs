@@ -21,7 +21,7 @@ pub fn from_vault(vault: &Vault) -> VaultStores {
             docs: vault.documents.clone(),
         },
         names: InMemoryNameIndex {
-            names: vault.manifest.names.clone(),
+            names: vault.names.clone(),
         },
     }
 }
