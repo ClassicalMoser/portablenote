@@ -39,11 +39,12 @@ A vault is a directory with the following layout:
   /<composition-name>/       # Multiple compositions supported
 
   /portablenote/             # Source artifacts (canonical data)
-    manifest.json            # Vault identity, version, format declaration, checksum
+    manifest.json            # Vault identity, version, format declaration, checksum chain
     names.json               # Name-to-UUID index (derived from block metadata)
     /blocks                  # Primary — heap of named block files
     block-graph.json         # Primary — typed directed edges between blocks
     /documents               # Optional — one JSON definition file per document composition
+    .journal                 # Ephemeral — present only during an in-flight commit (see §5a)
 ```
 
 A user opening the vault sees readable, named document trees at the root. The `portablenote/` directory contains all source artifacts — visible, portable, and inspectable without tooling.
@@ -67,7 +68,8 @@ Declares vault identity, spec version, content format, and integrity checksum.
   "vault_id": "uuid-v4",
   "spec_version": "0.1.0",
   "format": "markdown",
-  "checksum": "sha256:<hex>"
+  "checksum": "sha256:<hex>",
+  "previous_checksum": "sha256:<hex>" | null
 }
 ```
 
@@ -79,6 +81,7 @@ Declares vault identity, spec version, content format, and integrity checksum.
 | `spec_version` | semver string | PortableNote spec version this vault conforms to. |
 | `format` | string | Content format for all blocks in this vault. `"markdown"` for v0. Extensible. |
 | `checksum` | string | SHA-256 over canonical serialization of blocks, edges, and documents. Prefixed `sha256:`. |
+| `previous_checksum` | string \| null | Checksum of the vault state before the most recent commit. `null` for the genesis commit (vault init). Together with `checksum`, forms a hash chain: each commit is a verifiable `(before, after)` state transition. Two manifests sharing a `previous_checksum` but differing on `checksum` indicate a fork. |
 
 ### Checksum Computation
 
@@ -107,7 +110,20 @@ The checksum is a SHA-256 hash over a canonical byte representation of blocks, e
 
 If `/documents` is empty, documents contribute nothing. Block timestamps are excluded — only identity, name, and content participate.
 
-The result is stored as `sha256:<hex>`. On open, the implementation recomputes and compares. Mismatch triggers a validation pass and re-sign if the vault is consistent. Mismatch is advisory, not blocking — the user retains full control.
+#### Normalization Rules
+
+All conforming implementations must apply the following rules identically to produce interoperable checksums:
+
+| Field | Rule |
+|---|---|
+| All UUIDs | Lowercase, hyphenated: `a3f9b2c1-0000-4000-a000-000000000001` |
+| `name` and all string fields | UTF-8, NFC-normalized |
+| Line endings in `content` | LF (`\n`) only. `\r\n` is normalized to `\n` on write; `\r\n` in stored content is a format violation. |
+| `content` | Hashed as-stored. No trimming, no padding. The stored bytes are the canonical bytes. |
+
+These rules ensure that any conforming implementation — regardless of language or platform — produces identical checksums for the same logical vault state.
+
+The result is stored as `sha256:<hex>`. On open, the implementation recomputes and compares. If `.journal` is present, the mismatch triggers the recovery protocol (see §5a). Without a journal, mismatch triggers a validation pass and re-sign if the vault is consistent; mismatch without a journal is advisory, not blocking — the user retains full control.
 
 ---
 
@@ -343,7 +359,7 @@ A block with no edges in `block-graph.json` — no incoming and no outgoing refe
 
 ## 5. Mutation Standards
 
-All state changes are commands. Queries never mutate state. Validation occurs before commitment. Failed commands are rejected with a descriptive error. Successful commands update the relevant artifact(s) and recompute the checksum.
+All state changes are commands. Queries never mutate state. Validation occurs before commitment. Failed commands are rejected with a descriptive error. Successful commands produce a complete, ordered set of writes that are applied atomically via the commit protocol (see §5a). The checksum and `previous_checksum` in the manifest are updated as the final step of every commit.
 
 ### Commands
 
@@ -394,6 +410,99 @@ Every successful command emits a domain event. Events are not persisted in v0.
 | `EdgeRemoved` | edge UUID |
 | `VaultOpened` | vault UUID, checksum_status |
 | `ChecksumMismatch` | expected, actual, drift_summary |
+
+---
+
+## 5a. Commit Protocol
+
+Every successful command produces a complete, ordered list of vault writes. Applying those writes to persistent storage must be crash-safe: either all writes land and are reflected in the manifest, or the vault can be returned to a clean prior state. This section defines the normative commit protocol that achieves this guarantee.
+
+### Vault Structure Addition
+
+```
+/portablenote/
+  .journal          # Ephemeral. Present only during an in-flight commit.
+```
+
+The `.journal` file is a temporary artifact. It must not be present in a cleanly committed vault. Its presence on vault open is the indicator that a prior commit did not complete.
+
+### Journal Format
+
+The journal is a JSON file with the following schema:
+
+```json
+{
+  "previous_checksum": "sha256:<hex>",
+  "expected_checksum": "sha256:<hex>",
+  "before_image": [
+    { "kind": "Block", "data": { ... } },
+    { "kind": "Edge", "data": { ... } },
+    { "kind": "Document", "data": { ... } },
+    { "kind": "Name", "name": "...", "id": "uuid-v4" }
+  ],
+  "writes": [
+    { "kind": "WriteBlock", "data": { ... } },
+    { "kind": "DeleteBlock", "id": "uuid-v4" },
+    { "kind": "WriteEdge", "data": { ... } },
+    { "kind": "RemoveEdge", "id": "uuid-v4" },
+    { "kind": "WriteDocument", "data": { ... } },
+    { "kind": "DeleteDocument", "id": "uuid-v4" },
+    { "kind": "SetName", "name": "...", "id": "uuid-v4" },
+    { "kind": "RemoveName", "name": "..." }
+  ]
+}
+```
+
+#### Journal Fields
+
+| Field | Description |
+|---|---|
+| `previous_checksum` | The manifest's current `checksum` at the time the journal was written. The "before" state of this transition. |
+| `expected_checksum` | The checksum the vault will have after all writes land. The "after" state. |
+| `before_image` | Full prior state of every artifact that `writes` will modify or delete. Sufficient to fully undo the operation. |
+| `writes` | The ordered list of writes to apply. Applied in sequence. |
+
+#### Before-Image Entries
+
+Each entry in `before_image` records the artifact's state immediately before the commit:
+
+- An artifact that **existed before** the commit: `{ "kind": "<Kind>", "data": <full serialized artifact> }`
+- An artifact **created by this commit** (no prior state): `{ "kind": "<Kind>", "id": "<uuid>", "data": null }` — undo means delete it
+
+Kinds: `"Block"`, `"Edge"`, `"Document"`, `"Name"` (name entries use `"name"` and `"id"` fields; `"data": null` means undo = remove the name entry).
+
+### Commit Ordering
+
+A conforming implementation must apply writes in this exact order:
+
+1. **Write `.journal`** — Atomically (temp file + rename on POSIX, or equivalent). The journal must be fully durable before any vault artifact is modified.
+2. **Apply writes** — Apply every entry in `writes` in order to the vault artifacts (blocks, graph, names, documents).
+3. **Write manifest** — Atomically write `manifest.json` with `checksum` set to `expected_checksum` and `previous_checksum` set to the old checksum. This is the **commit point**: once the manifest is written, the commit is complete.
+4. **Delete `.journal`** — Clean up.
+
+Step 3 is the commit point. If the process crashes after step 1 but before step 3, the journal is present on next open and recovery applies. If the process crashes after step 3, the journal may or may not be deleted — that is harmless, as recovery will detect Case A.
+
+### Recovery Protocol
+
+On vault open, a conforming implementation must execute the following recovery check before any other validation:
+
+**If `.journal` is present:**
+
+Compute the actual checksum from the current vault contents (using the canonical serialization algorithm in §1).
+
+| Case | Condition | Action |
+|---|---|---|
+| **A — Writes landed, manifest lost** | actual == `expected_checksum` | Rewrite manifest with `expected_checksum` (as `checksum`) and `previous_checksum`. Delete journal. Vault is clean. |
+| **B — No writes landed** | actual == `previous_checksum` | Delete journal. Vault is clean at prior state. |
+| **C — Partial writes** | actual matches neither | Apply undo: restore every entry in `before_image` to disk, recompute checksum, verify it matches `previous_checksum`. Rewrite manifest with `previous_checksum` as `checksum`. Delete journal. Emit a warning. |
+
+Case C undo is the mandated recovery strategy. Implementations must not silently accept a partial-write state.
+
+After successful recovery, the vault is in a fully consistent state and proceeds with normal open-time validation.
+
+**If `.journal` is absent:**
+
+Compute checksum and compare to manifest. A mismatch without a journal indicates external file modification (git, manual edit, or another tool). This is advisory — see §1 Checksum Computation.
 
 ---
 

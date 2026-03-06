@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "PortableNote Manifest",
-  "description": "Vault identity, spec version, format declaration, and checksum.",
+  "description": "Vault identity, spec version, format declaration, and checksum chain.",
   "type": "object",
-  "required": ["vault_id", "spec_version", "format", "checksum"],
+  "required": ["vault_id", "spec_version", "format", "checksum", "previous_checksum"],
   "additionalProperties": false,
   "properties": {
     "vault_id": {
@@ -24,7 +24,19 @@
     "checksum": {
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$",
-      "description": "SHA-256 over canonical serialization of all source artifacts. Prefixed 'sha256:'."
+      "description": "SHA-256 over canonical serialization of all source artifacts. Prefixed 'sha256:'. This is the commit point: once written, the commit is complete."
+    },
+    "previous_checksum": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Checksum of the vault state before the most recent commit. null for the genesis commit (vault init). Together with checksum, forms a hash chain: each manifest records a verifiable (before, after) state transition. Two manifests sharing a previous_checksum but differing on checksum indicate a fork."
     }
   }
 }

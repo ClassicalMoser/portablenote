@@ -17,9 +17,10 @@ The full specification is in [`portablenote-spec.md`](portablenote-spec.md).
 spec/
   portablenote-spec.md        Normative specification document
   schemas/                    JSON schemas for vault artifacts
-    manifest.schema.json      Vault manifest
+    manifest.schema.json      Vault manifest (identity, checksum chain)
     block-graph.schema.json   Block reference graph
     document.schema.json      Document composition definition
+    journal.schema.json       Commit journal (ephemeral; crash-recovery write-ahead log)
   compliance/                 Test fixtures for conformance testing
     valid/                    Vault directories that must pass validation
     invalid/                  Vault directories that must fail with specific errors
