@@ -4,6 +4,7 @@ mod support;
 use uuid::Uuid;
 
 use portablenote_core::application::ports::{BlockStore, GraphStore, NameIndex};
+use portablenote_core::application::results::VaultWrite;
 use portablenote_core::application::use_cases::{
     add_block, add_edge, delete_block_safe, rename_block,
 };
@@ -23,7 +24,7 @@ fn load_with_refs() -> support::in_memory::VaultStores {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-store use case: add_block (read-only ports, changeset application)
+// add_block
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -38,10 +39,11 @@ fn add_block_round_trip() {
         add_block::execute(&stores.blocks, &stores.names, new_id, "New Block", "hello world")
             .unwrap();
 
-    assert_eq!(result.block.id, new_id);
+    // Block is in the first write
+    assert!(matches!(&result.writes[0], VaultWrite::SaveBlock(b) if b.id == new_id));
     assert_eq!(result.event.name, "New Block");
 
-    changeset::apply_add_block(&mut stores, result);
+    changeset::apply_writes(&mut stores, result.writes);
 
     assert_eq!(stores.blocks.list().len(), 4);
     assert!(stores.blocks.get(new_id).is_some());
@@ -60,7 +62,7 @@ fn add_block_rejects_duplicate_name() {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-store use case: rename_block (propagation across inline refs)
+// rename_block
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -77,11 +79,12 @@ fn rename_block_propagates_refs() {
     )
     .unwrap();
 
-    assert_eq!(result.renamed.name, "Quick Start");
-    assert_eq!(result.old_name, "Getting Started");
+    // Renamed block is in the first write
+    assert!(matches!(&result.writes[0], VaultWrite::SaveBlock(b) if b.name == "Quick Start"));
+    assert_eq!(result.event.old_name, "Getting Started");
     assert_eq!(result.event.refs_updated, 1);
 
-    changeset::apply_rename_block(&mut stores, result);
+    changeset::apply_writes(&mut stores, result.writes);
 
     let renamed = stores.blocks.get(getting_started_id).unwrap();
     assert_eq!(renamed.name, "Quick Start");
@@ -106,7 +109,7 @@ fn rename_block_propagates_refs() {
 }
 
 // ---------------------------------------------------------------------------
-// Multi-store use case: delete_block_safe (rejection + success paths)
+// delete_block_safe
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -130,15 +133,19 @@ fn delete_block_safe_succeeds_for_source_only_block() {
     let result =
         delete_block_safe::execute(&stores.blocks, &stores.graph, core_concepts_id).unwrap();
 
-    assert_eq!(result.block_id, core_concepts_id);
-    assert_eq!(result.name_to_remove, "Core Concepts");
-    assert_eq!(
-        result.outgoing_edge_ids.len(),
-        2,
-        "Core Concepts has 2 outgoing edges"
-    );
+    assert_eq!(result.event.block_id, core_concepts_id);
+    let outgoing_count = result
+        .writes
+        .iter()
+        .filter(|w| matches!(w, VaultWrite::RemoveEdge(_)))
+        .count();
+    assert_eq!(outgoing_count, 2, "Core Concepts has 2 outgoing edges");
+    assert!(result
+        .writes
+        .iter()
+        .any(|w| matches!(w, VaultWrite::RemoveName(n) if n == "Core Concepts")));
 
-    changeset::apply_delete_block_safe(&mut stores, result);
+    changeset::apply_writes(&mut stores, result.writes);
 
     assert!(stores.blocks.get(core_concepts_id).is_none());
     assert!(stores.names.resolve("Core Concepts").is_none());
@@ -150,7 +157,7 @@ fn delete_block_safe_succeeds_for_source_only_block() {
 }
 
 // ---------------------------------------------------------------------------
-// Single-store use case: add_edge (writes directly to GraphStore)
+// add_edge
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -162,30 +169,33 @@ fn add_edge_round_trip() {
 
     assert_eq!(stores.graph.edges_for(getting_started_id).len(), 1);
 
-    let event = add_edge::execute(
+    let result = add_edge::execute(
         &stores.blocks,
-        &mut stores.graph,
+        &stores.graph,
         new_edge_id,
         getting_started_id,
         advanced_id,
     )
     .unwrap();
 
-    assert_eq!(event.edge_id, new_edge_id);
+    assert_eq!(result.event.edge_id, new_edge_id);
+
+    changeset::apply_writes(&mut stores, result.writes);
+
     assert!(stores.graph.get_edge(new_edge_id).is_some());
     assert_eq!(stores.graph.edges_for(getting_started_id).len(), 2);
 }
 
 #[test]
 fn add_edge_rejects_dangling_target() {
-    let mut stores = load_with_refs();
+    let stores = load_with_refs();
     let new_edge_id = uuid("eeeeeeee-0000-4000-a000-000000000002");
     let getting_started_id = uuid("20000000-0000-4000-a000-000000000002");
     let nonexistent = uuid("ffffffff-0000-4000-a000-ffffffffffff");
 
     let result = add_edge::execute(
         &stores.blocks,
-        &mut stores.graph,
+        &stores.graph,
         new_edge_id,
         getting_started_id,
         nonexistent,

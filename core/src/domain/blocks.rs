@@ -5,6 +5,7 @@ use super::content;
 use super::error::DomainError;
 use super::types::Block;
 
+/// Create a new block, enforcing the no-heading and non-empty-name invariants.
 pub fn create(id: Uuid, name: &str, content_str: &str) -> Result<Block, DomainError> {
     if name.is_empty() {
         return Err(DomainError::EmptyName);
@@ -22,6 +23,7 @@ pub fn create(id: Uuid, name: &str, content_str: &str) -> Result<Block, DomainEr
     })
 }
 
+/// Apply a rename to a block, updating `modified`. Rejects empty names.
 pub fn apply_rename(mut block: Block, new_name: &str) -> Result<Block, DomainError> {
     if new_name.is_empty() {
         return Err(DomainError::EmptyName);
@@ -31,6 +33,7 @@ pub fn apply_rename(mut block: Block, new_name: &str) -> Result<Block, DomainErr
     Ok(block)
 }
 
+/// Replace a block's content, enforcing the no-heading invariant.
 pub fn apply_content(mut block: Block, content_str: &str) -> Result<Block, DomainError> {
     if content::find_heading_outside_fence(content_str).is_some() {
         return Err(DomainError::HeadingInContent);

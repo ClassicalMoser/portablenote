@@ -1,42 +1,34 @@
+//! Mutation output types for all use cases.
+//!
+//! Every use case returns `CommandResult<E>` — a complete, ordered list of
+//! `VaultWrite` operations to apply atomically, plus the domain event. No use
+//! case writes to any store; adapters consume the writes and persist them.
+
 use uuid::Uuid;
 
-use crate::domain::events::{BlockAdded, BlockDeleted, BlockRenamed};
-use crate::domain::types::Block;
+use crate::domain::types::{Block, Document, Edge};
 
-/// Result of adding a block. Adapter must persist the block and register the name.
-pub struct AddBlockResult {
-    pub block: Block,
-    pub event: BlockAdded,
+/// Every possible mutation to vault state.
+///
+/// Adapters receive a `Vec<VaultWrite>` from a use case and apply all entries
+/// atomically. The order is significant: writes must be applied in sequence to
+/// maintain referential consistency (e.g. save reverted blocks before deleting
+/// the block they referenced).
+#[derive(Debug, Clone)]
+pub enum VaultWrite {
+    SaveBlock(Block),
+    DeleteBlock(Uuid),
+    SaveEdge(Edge),
+    RemoveEdge(Uuid),
+    SaveDocument(Document),
+    DeleteDocument(Uuid),
+    SetName { name: String, id: Uuid },
+    RemoveName(String),
 }
 
-/// Result of renaming a block. Adapter must persist the renamed block,
-/// all propagated blocks (with updated inline refs), remove the old name,
-/// and register the new name.
-pub struct RenameBlockResult {
-    pub renamed: Block,
-    pub propagated: Vec<Block>,
-    pub old_name: String,
-    pub event: BlockRenamed,
-}
-
-/// Result of a safe block deletion (rejected if incoming edges exist).
-/// Adapter must persist reverted blocks, remove outgoing edges, delete the
-/// block, and remove the name.
-pub struct DeleteBlockSafeResult {
-    pub block_id: Uuid,
-    pub reverted_blocks: Vec<Block>,
-    pub outgoing_edge_ids: Vec<Uuid>,
-    pub name_to_remove: String,
-    pub event: BlockDeleted,
-}
-
-/// Result of a cascade block deletion (always proceeds).
-/// Adapter must persist reverted blocks, remove all edges (incoming + outgoing),
-/// delete the block, and remove the name.
-pub struct DeleteBlockCascadeResult {
-    pub block_id: Uuid,
-    pub reverted_blocks: Vec<Block>,
-    pub all_edge_ids: Vec<Uuid>,
-    pub name_to_remove: String,
-    pub event: BlockDeleted,
+/// The output of every use case: an ordered set of writes to apply atomically,
+/// plus the domain event describing what happened.
+pub struct CommandResult<E> {
+    pub writes: Vec<VaultWrite>,
+    pub event: E,
 }

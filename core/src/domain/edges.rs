@@ -2,6 +2,7 @@ use uuid::Uuid;
 
 use super::types::Edge;
 
+/// Construct a directed edge between two block UUIDs.
 pub fn create(id: Uuid, source: Uuid, target: Uuid) -> Edge {
     Edge { id, source, target }
 }

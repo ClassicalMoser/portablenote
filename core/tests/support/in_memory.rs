@@ -12,6 +12,22 @@ pub struct InMemoryBlockStore {
     pub blocks: HashMap<Uuid, Block>,
 }
 
+impl InMemoryBlockStore {
+    pub fn save(&mut self, block: &Block) {
+        self.blocks.insert(block.id, block.clone());
+    }
+
+    pub fn save_all(&mut self, blocks: &[Block]) {
+        for block in blocks {
+            self.blocks.insert(block.id, block.clone());
+        }
+    }
+
+    pub fn delete(&mut self, id: Uuid) {
+        self.blocks.remove(&id);
+    }
+}
+
 impl BlockStore for InMemoryBlockStore {
     fn get(&self, id: Uuid) -> Option<Block> {
         self.blocks.get(&id).cloned()
@@ -29,25 +45,22 @@ impl BlockStore for InMemoryBlockStore {
             .cloned()
             .collect()
     }
-
-    fn save(&mut self, block: &Block) {
-        self.blocks.insert(block.id, block.clone());
-    }
-
-    fn save_all(&mut self, blocks: &[Block]) {
-        for block in blocks {
-            self.blocks.insert(block.id, block.clone());
-        }
-    }
-
-    fn delete(&mut self, id: Uuid) {
-        self.blocks.remove(&id);
-    }
 }
 
 /// In-memory reference graph. Stores edges in a Vec for simplicity.
 pub struct InMemoryGraphStore {
     pub edges: Vec<Edge>,
+}
+
+impl InMemoryGraphStore {
+    pub fn save_edge(&mut self, edge: &Edge) {
+        self.edges.retain(|e| e.id != edge.id);
+        self.edges.push(edge.clone());
+    }
+
+    pub fn remove_edge(&mut self, id: Uuid) {
+        self.edges.retain(|e| e.id != id);
+    }
 }
 
 impl GraphStore for InMemoryGraphStore {
@@ -70,15 +83,6 @@ impl GraphStore for InMemoryGraphStore {
             .cloned()
             .collect()
     }
-
-    fn save_edge(&mut self, edge: &Edge) {
-        self.edges.retain(|e| e.id != edge.id);
-        self.edges.push(edge.clone());
-    }
-
-    fn remove_edges(&mut self, ids: &[Uuid]) {
-        self.edges.retain(|e| !ids.contains(&e.id));
-    }
 }
 
 /// In-memory document store. Keyed by document UUID.
@@ -86,37 +90,40 @@ pub struct InMemoryDocumentStore {
     pub docs: HashMap<Uuid, Document>,
 }
 
-impl DocumentStore for InMemoryDocumentStore {
-    fn get(&self, id: Uuid) -> Option<Document> {
-        self.docs.get(&id).cloned()
-    }
-
-    fn save(&mut self, doc: &Document) {
+impl InMemoryDocumentStore {
+    pub fn save(&mut self, doc: &Document) {
         self.docs.insert(doc.id, doc.clone());
     }
 
-    fn delete(&mut self, id: Uuid) {
+    pub fn delete(&mut self, id: Uuid) {
         self.docs.remove(&id);
     }
 }
 
-/// In-memory name-to-UUID index. Case-preserving storage; lookups are exact.
-/// Case-insensitive uniqueness is enforced by domain invariants, not here.
+impl DocumentStore for InMemoryDocumentStore {
+    fn get(&self, id: Uuid) -> Option<Document> {
+        self.docs.get(&id).cloned()
+    }
+}
+
+/// In-memory name-to-UUID index.
 pub struct InMemoryNameIndex {
     pub names: HashMap<String, Uuid>,
+}
+
+impl InMemoryNameIndex {
+    pub fn set(&mut self, name: &str, id: Uuid) {
+        self.names.insert(name.to_string(), id);
+    }
+
+    pub fn remove(&mut self, name: &str) {
+        self.names.remove(name);
+    }
 }
 
 impl NameIndex for InMemoryNameIndex {
     fn resolve(&self, name: &str) -> Option<Uuid> {
         self.names.get(name).copied()
-    }
-
-    fn set(&mut self, name: &str, id: Uuid) {
-        self.names.insert(name.to_string(), id);
-    }
-
-    fn remove(&mut self, name: &str) {
-        self.names.remove(name);
     }
 }
 

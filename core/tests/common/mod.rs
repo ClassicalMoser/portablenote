@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use portablenote_core::domain::format;
 use portablenote_core::domain::types::*;
 use uuid::Uuid;
 
@@ -66,7 +66,8 @@ fn load_blocks(blocks_dir: &Path) -> HashMap<Uuid, Block> {
         }
 
         let raw = fs::read_to_string(&path).expect("Failed to read block file");
-        let block = parse_block_file(&raw);
+        let block = format::parse_block_file_permissive(&raw)
+            .unwrap_or_else(|e| panic!("Failed to parse block file {}: {e}", path.display()));
         blocks.insert(block.id, block);
     }
 
@@ -93,11 +94,11 @@ pub fn find_duplicate_uuids(vault_dir: &Path) -> Vec<Uuid> {
         }
 
         let raw = fs::read_to_string(&path).expect("Failed to read block file");
-        let (metadata_str, _) = extract_html_comment_metadata(&raw);
-        let metadata = parse_yaml_metadata(&metadata_str);
-
-        if let Some(id) = metadata.get("id").and_then(|s| Uuid::parse_str(s).ok()) {
-            *seen.entry(id).or_insert(0) += 1;
+        if let Ok((header, _)) = format::extract_metadata_header(&raw) {
+            let fields = format::parse_metadata_fields(&header);
+            if let Some(id) = fields.get("id").and_then(|s| Uuid::parse_str(s).ok()) {
+                *seen.entry(id).or_insert(0) += 1;
+            }
         }
     }
 
@@ -129,83 +130,6 @@ fn load_documents(docs_dir: &Path) -> HashMap<Uuid, Document> {
     }
 
     documents
-}
-
-/// Parse a block `.md` file with HTML-comment metadata.
-///
-/// Expected format:
-/// ```text
-/// <!--
-/// id: <uuid>
-/// name: <string>
-/// created: <iso8601>
-/// modified: <iso8601>
-/// -->
-///
-/// <content>
-/// ```
-fn parse_block_file(raw: &str) -> Block {
-    let (metadata_str, content) = extract_html_comment_metadata(raw);
-
-    let metadata: HashMap<String, String> = parse_yaml_metadata(&metadata_str);
-
-    let id = metadata
-        .get("id")
-        .and_then(|s| Uuid::parse_str(s).ok())
-        .expect("Block metadata must contain a valid 'id' field");
-
-    let name = metadata
-        .get("name")
-        .cloned()
-        .unwrap_or_default();
-
-    let created = metadata
-        .get("created")
-        .and_then(|s| s.parse::<DateTime<Utc>>().ok())
-        .unwrap_or_default();
-
-    let modified = metadata
-        .get("modified")
-        .and_then(|s| s.parse::<DateTime<Utc>>().ok())
-        .unwrap_or_default();
-
-    Block {
-        id,
-        name,
-        content,
-        created,
-        modified,
-    }
-}
-
-/// Extract the YAML content from `<!-- ... -->` and the remaining body content.
-fn extract_html_comment_metadata(raw: &str) -> (String, String) {
-    let trimmed = raw.trim_start();
-
-    if let Some(after_open) = trimmed.strip_prefix("<!--") {
-        if let Some(close_pos) = after_open.find("-->") {
-            let yaml = after_open[..close_pos].trim().to_string();
-            let rest = after_open[close_pos + 3..].to_string();
-            let content = rest.trim_start_matches('\n').trim_start_matches('\r');
-            return (yaml, content.to_string());
-        }
-    }
-
-    (String::new(), raw.to_string())
-}
-
-fn parse_yaml_metadata(yaml_str: &str) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for line in yaml_str.lines() {
-        if let Some((key, value)) = line.split_once(':') {
-            let key = key.trim().to_string();
-            let value = value.trim().to_string();
-            if !key.is_empty() {
-                map.insert(key, value);
-            }
-        }
-    }
-    map
 }
 
 /// Load the `_expected_error.json` for an invalid vault fixture.

@@ -2,47 +2,103 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-/// Find the first heading (h1-h6) outside a fenced code block.
+/// Find the first heading (ATX or setext) outside a fenced code block.
 /// Returns `(level, heading_text)` if found.
+///
+/// Detects both ATX headings (`# Heading`) and setext headings (paragraph
+/// text followed immediately by a line of `=` or `-` characters).
+///
+/// Respects CommonMark indentation rules: lines with 4+ leading spaces are
+/// indented code blocks, not structural elements.
 pub fn find_heading_outside_fence(content: &str) -> Option<(u8, String)> {
     let mut in_fence = false;
+    let mut prev_line: Option<&str> = None;
 
     for line in content.lines() {
-        let trimmed = line.trim_start();
-
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            in_fence = !in_fence;
-            continue;
-        }
+        let indent = leading_spaces(line);
+        let stripped = line[indent..].trim_end();
 
         if in_fence {
+            if indent <= 3 && is_fence_marker(stripped) {
+                in_fence = false;
+            }
+            prev_line = None;
             continue;
         }
 
-        if let Some(stripped) = trimmed.strip_prefix('#') {
-            let mut level: u8 = 1;
-            let mut rest = stripped;
+        // 4+ spaces: indented code block — not structural
+        if indent >= 4 {
+            prev_line = None;
+            continue;
+        }
 
-            while let Some(s) = rest.strip_prefix('#') {
-                level += 1;
-                rest = s;
-                if level > 6 {
-                    break;
-                }
-            }
+        if is_fence_marker(stripped) {
+            in_fence = true;
+            prev_line = None;
+            continue;
+        }
 
-            if level <= 6 {
-                if let Some(s) = rest.strip_prefix(' ') {
-                    let text = s.trim().to_string();
-                    if !text.is_empty() {
-                        return Some((level, text));
-                    }
-                }
+        // ATX heading: # through ######
+        if let Some(level_and_text) = detect_atx_heading(stripped) {
+            return Some(level_and_text);
+        }
+
+        // Setext heading: paragraph text followed by a line of = or -
+        if let Some(prev) = prev_line {
+            if is_setext_underline(stripped) {
+                let level = if stripped.starts_with('=') { 1 } else { 2 };
+                return Some((level, prev.trim().to_string()));
             }
+        }
+
+        if stripped.is_empty() {
+            prev_line = None;
+        } else {
+            prev_line = Some(stripped);
         }
     }
 
     None
+}
+
+fn leading_spaces(line: &str) -> usize {
+    line.bytes().take_while(|&b| b == b' ').count()
+}
+
+fn is_fence_marker(line: &str) -> bool {
+    (line.starts_with("```") && line.trim_start_matches('`').find('`').is_none())
+        || (line.starts_with("~~~") && line.trim_start_matches('~').find('~').is_none())
+}
+
+fn detect_atx_heading(line: &str) -> Option<(u8, String)> {
+    let stripped = line.strip_prefix('#')?;
+    let mut level: u8 = 1;
+    let mut rest = stripped;
+
+    while let Some(s) = rest.strip_prefix('#') {
+        level += 1;
+        rest = s;
+        if level > 6 {
+            return None;
+        }
+    }
+
+    let s = rest.strip_prefix(' ')?;
+    let text = s.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    Some((level, text))
+}
+
+/// A setext heading underline is a line consisting entirely of `=` or `-`
+/// characters (at least one).
+fn is_setext_underline(line: &str) -> bool {
+    if line.is_empty() {
+        return false;
+    }
+    let marker = line.as_bytes()[0];
+    (marker == b'=' || marker == b'-') && line.bytes().all(|b| b == marker)
 }
 
 /// Extract all `[[Name]]` inline references from block content.
@@ -171,6 +227,100 @@ mod tests {
     #[test]
     fn no_heading_returns_none() {
         assert!(find_heading_outside_fence("Plain text.").is_none());
+    }
+
+    // --- setext headings ---
+
+    #[test]
+    fn setext_h1_with_equals() {
+        let content = "Some text.\n\nBad Heading\n===\n\nMore text.";
+        assert_eq!(
+            find_heading_outside_fence(content),
+            Some((1, "Bad Heading".to_string()))
+        );
+    }
+
+    #[test]
+    fn setext_h2_with_dashes() {
+        let content = "Some text.\n\nBad Heading\n---\n\nMore text.";
+        assert_eq!(
+            find_heading_outside_fence(content),
+            Some((2, "Bad Heading".to_string()))
+        );
+    }
+
+    #[test]
+    fn setext_single_dash_is_heading() {
+        let content = "Heading\n-";
+        assert_eq!(
+            find_heading_outside_fence(content),
+            Some((2, "Heading".to_string()))
+        );
+    }
+
+    #[test]
+    fn setext_single_equals_is_heading() {
+        let content = "Heading\n=";
+        assert_eq!(
+            find_heading_outside_fence(content),
+            Some((1, "Heading".to_string()))
+        );
+    }
+
+    #[test]
+    fn setext_inside_fence_ignored() {
+        let content = "Text.\n\n```\nNot a heading\n===\n```\n\nMore text.";
+        assert!(find_heading_outside_fence(content).is_none());
+    }
+
+    #[test]
+    fn dashes_after_blank_line_not_heading() {
+        let content = "Some text.\n\n---\n\nMore text.";
+        assert!(find_heading_outside_fence(content).is_none());
+    }
+
+    #[test]
+    fn equals_after_blank_line_not_heading() {
+        let content = "Some text.\n\n===\n\nMore text.";
+        assert!(find_heading_outside_fence(content).is_none());
+    }
+
+    #[test]
+    fn mixed_underline_not_setext() {
+        let content = "Not a heading\n=-=\n";
+        assert!(find_heading_outside_fence(content).is_none());
+    }
+
+    // --- indentation ---
+
+    #[test]
+    fn atx_heading_with_3_spaces_is_heading() {
+        let content = "   ## Indented Heading";
+        assert_eq!(
+            find_heading_outside_fence(content),
+            Some((2, "Indented Heading".to_string()))
+        );
+    }
+
+    #[test]
+    fn atx_heading_with_4_spaces_is_code() {
+        let content = "    ## Not a heading";
+        assert!(find_heading_outside_fence(content).is_none());
+    }
+
+    #[test]
+    fn setext_underline_with_4_spaces_is_code() {
+        let content = "Paragraph\n    ===";
+        assert!(find_heading_outside_fence(content).is_none());
+    }
+
+    #[test]
+    fn fence_with_4_spaces_does_not_open() {
+        let content = "    ```\n## Real Heading\n    ```";
+        assert_eq!(
+            find_heading_outside_fence(content),
+            Some((2, "Real Heading".to_string()))
+        );
     }
 
     #[test]

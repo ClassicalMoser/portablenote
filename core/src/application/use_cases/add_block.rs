@@ -1,18 +1,21 @@
 use uuid::Uuid;
 
 use crate::application::ports::{BlockStore, NameIndex};
-use crate::application::results::AddBlockResult;
+use crate::application::results::{CommandResult, VaultWrite};
 use crate::domain::blocks;
 use crate::domain::error::DomainError;
 use crate::domain::events::BlockAdded;
 
+/// Create a new block. Rejects duplicate names and IDs.
+///
+/// Multi-store: returns a `CommandResult` with `SaveBlock` and `SetName` writes.
 pub fn execute(
     blocks: &dyn BlockStore,
     names: &dyn NameIndex,
     id: Uuid,
     name: &str,
     content: &str,
-) -> Result<AddBlockResult, DomainError> {
+) -> Result<CommandResult<BlockAdded>, DomainError> {
     if let Some(existing) = names.resolve(name) {
         return Err(DomainError::NameConflict(name.to_string(), existing));
     }
@@ -22,8 +25,11 @@ pub fn execute(
 
     let block = blocks::create(id, name, content)?;
 
-    Ok(AddBlockResult {
-        block,
+    Ok(CommandResult {
+        writes: vec![
+            VaultWrite::SaveBlock(block),
+            VaultWrite::SetName { name: name.to_string(), id },
+        ],
         event: BlockAdded {
             block_id: id,
             name: name.to_string(),
@@ -35,6 +41,7 @@ pub fn execute(
 mod tests {
     use super::*;
     use crate::application::ports::{MockBlockStore, MockNameIndex};
+    use crate::application::results::VaultWrite;
     use mockall::predicate::eq;
 
     const ID: &str = "00000000-0000-4000-a000-000000000001";
@@ -48,7 +55,7 @@ mod tests {
     }
 
     #[test]
-    fn happy_path_returns_block_and_event() {
+    fn happy_path_returns_writes_and_event() {
         let mut blocks = MockBlockStore::new();
         let mut names = MockNameIndex::new();
 
@@ -62,11 +69,12 @@ mod tests {
             .return_once(|_| None);
 
         let result = execute(&blocks, &names, id(), "Alpha", "content").unwrap();
-        assert_eq!(result.block.id, id());
-        assert_eq!(result.block.name, "Alpha");
-        assert_eq!(result.block.content, "content");
+
         assert_eq!(result.event.block_id, id());
         assert_eq!(result.event.name, "Alpha");
+        assert_eq!(result.writes.len(), 2);
+        assert!(matches!(&result.writes[0], VaultWrite::SaveBlock(b) if b.id == id() && b.name == "Alpha" && b.content == "content"));
+        assert!(matches!(&result.writes[1], VaultWrite::SetName { name, id: wid } if name == "Alpha" && *wid == id()));
     }
 
     #[test]

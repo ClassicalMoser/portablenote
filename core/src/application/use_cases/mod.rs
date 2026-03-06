@@ -1,3 +1,7 @@
+//! One module per spec command. Each exposes a single `execute` function that
+//! accepts port trait references and returns either a domain event (single-store)
+//! or a result struct (multi-store) for the adapter to apply.
+
 pub mod add_block;
 pub mod add_document;
 pub mod add_edge;

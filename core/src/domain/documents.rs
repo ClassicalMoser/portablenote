@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use super::types::{Block, Document, Section, Subsection};
 
+/// Create a new empty document rooted at the given block UUID.
 pub fn create(id: Uuid, root: Uuid) -> Document {
     Document {
         id,

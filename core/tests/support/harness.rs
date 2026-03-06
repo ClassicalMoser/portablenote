@@ -1,8 +1,8 @@
 //! Mutation compliance harness.
 //!
 //! Loads a scenario JSON, hydrates in-memory stores from the fixture vault,
-//! dispatches the command to the appropriate use case, applies changesets for
-//! multi-store results, and evaluates every post-mutation assertion.
+//! dispatches the command to the appropriate use case, applies the returned
+//! `Vec<VaultWrite>` to the stores, and evaluates every post-mutation assertion.
 
 #![allow(dead_code)] // shared test infra — not every binary uses every function
 
@@ -148,15 +148,13 @@ fn dispatch_add_block(cmd: &ScenarioCommand, stores: &mut VaultStores) -> Comman
                 "block_id": result.event.block_id.to_string(),
                 "name": result.event.name,
             }));
-            changeset::apply_add_block(stores, result);
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "BlockAdded".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 
@@ -171,15 +169,13 @@ fn dispatch_rename_block(cmd: &ScenarioCommand, stores: &mut VaultStores) -> Com
                 "old_name": result.event.old_name,
                 "new_name": result.event.new_name,
             }));
-            changeset::apply_rename_block(stores, result);
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "BlockRenamed".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 
@@ -193,33 +189,27 @@ fn dispatch_delete_block(cmd: &ScenarioCommand, stores: &mut VaultStores) -> Com
                 let event_fields = json_map(json!({
                     "block_id": result.event.block_id.to_string(),
                 }));
-                changeset::apply_delete_block_safe(stores, result);
+                changeset::apply_writes(stores, result.writes);
                 CommandOutcome::Success {
                     event_name: "BlockDeleted".to_string(),
                     event_fields,
                 }
             }
-            Err(e) => CommandOutcome::Rejected {
-                error: e.to_string(),
-            },
+            Err(e) => CommandOutcome::Rejected { error: e.to_string() },
         },
-        "cascade" => {
-            match delete_block_cascade::execute(&stores.blocks, &stores.graph, block_id) {
-                Ok(result) => {
-                    let event_fields = json_map(json!({
-                        "block_id": result.event.block_id.to_string(),
-                    }));
-                    changeset::apply_delete_block_cascade(stores, result);
-                    CommandOutcome::Success {
-                        event_name: "BlockDeleted".to_string(),
-                        event_fields,
-                    }
+        "cascade" => match delete_block_cascade::execute(&stores.blocks, &stores.graph, block_id) {
+            Ok(result) => {
+                let event_fields = json_map(json!({
+                    "block_id": result.event.block_id.to_string(),
+                }));
+                changeset::apply_writes(stores, result.writes);
+                CommandOutcome::Success {
+                    event_name: "BlockDeleted".to_string(),
+                    event_fields,
                 }
-                Err(e) => CommandOutcome::Rejected {
-                    error: e.to_string(),
-                },
             }
-        }
+            Err(e) => CommandOutcome::Rejected { error: e.to_string() },
+        },
         other => panic!("unknown DeleteBlock mode: {other}"),
     }
 }
@@ -231,19 +221,18 @@ fn dispatch_mutate_block_content(
     let block_id = payload_uuid(cmd, "block_id");
     let content = payload_str(cmd, "content");
 
-    match mutate_block_content::execute(&mut stores.blocks, block_id, &content) {
-        Ok(event) => {
+    match mutate_block_content::execute(&stores.blocks, block_id, &content) {
+        Ok(result) => {
             let event_fields = json_map(json!({
-                "block_id": event.block_id.to_string(),
+                "block_id": result.event.block_id.to_string(),
             }));
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "BlockContentMutated".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 
@@ -252,40 +241,38 @@ fn dispatch_add_edge(cmd: &ScenarioCommand, stores: &mut VaultStores) -> Command
     let source = payload_uuid(cmd, "source");
     let target = payload_uuid(cmd, "target");
 
-    match add_edge::execute(&stores.blocks, &mut stores.graph, id, source, target) {
-        Ok(event) => {
+    match add_edge::execute(&stores.blocks, &stores.graph, id, source, target) {
+        Ok(result) => {
             let event_fields = json_map(json!({
-                "edge_id": event.edge_id.to_string(),
-                "source": event.source.to_string(),
-                "target": event.target.to_string(),
+                "edge_id": result.event.edge_id.to_string(),
+                "source": result.event.source.to_string(),
+                "target": result.event.target.to_string(),
             }));
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "EdgeAdded".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 
 fn dispatch_remove_edge(cmd: &ScenarioCommand, stores: &mut VaultStores) -> CommandOutcome {
     let edge_id = payload_uuid(cmd, "edge_id");
 
-    match remove_edge::execute(&mut stores.graph, edge_id) {
-        Ok(event) => {
+    match remove_edge::execute(&stores.graph, edge_id) {
+        Ok(result) => {
             let event_fields = json_map(json!({
-                "edge_id": event.edge_id.to_string(),
+                "edge_id": result.event.edge_id.to_string(),
             }));
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "EdgeRemoved".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 
@@ -293,39 +280,37 @@ fn dispatch_add_document(cmd: &ScenarioCommand, stores: &mut VaultStores) -> Com
     let id = payload_uuid(cmd, "id");
     let root = payload_uuid(cmd, "root");
 
-    match add_document::execute(&stores.blocks, &mut stores.documents, id, root) {
-        Ok(event) => {
+    match add_document::execute(&stores.blocks, &stores.documents, id, root) {
+        Ok(result) => {
             let event_fields = json_map(json!({
-                "document_id": event.document_id.to_string(),
-                "root_block_id": event.root_block_id.to_string(),
+                "document_id": result.event.document_id.to_string(),
+                "root_block_id": result.event.root_block_id.to_string(),
             }));
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "DocumentAdded".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 
 fn dispatch_delete_document(cmd: &ScenarioCommand, stores: &mut VaultStores) -> CommandOutcome {
     let document_id = payload_uuid(cmd, "document_id");
 
-    match delete_document::execute(&mut stores.documents, document_id) {
-        Ok(event) => {
+    match delete_document::execute(&stores.documents, document_id) {
+        Ok(result) => {
             let event_fields = json_map(json!({
-                "document_id": event.document_id.to_string(),
+                "document_id": result.event.document_id.to_string(),
             }));
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "DocumentDeleted".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 
@@ -333,20 +318,19 @@ fn dispatch_append_section(cmd: &ScenarioCommand, stores: &mut VaultStores) -> C
     let document_id = payload_uuid(cmd, "document_id");
     let block_id = payload_uuid(cmd, "block_id");
 
-    match append_section::execute(&stores.blocks, &mut stores.documents, document_id, block_id) {
-        Ok(event) => {
+    match append_section::execute(&stores.blocks, &stores.documents, document_id, block_id) {
+        Ok(result) => {
             let event_fields = json_map(json!({
-                "document_id": event.document_id.to_string(),
-                "block_id": event.block_id.to_string(),
+                "document_id": result.event.document_id.to_string(),
+                "block_id": result.event.block_id.to_string(),
             }));
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "SectionAppended".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 
@@ -357,24 +341,23 @@ fn dispatch_append_subsection(cmd: &ScenarioCommand, stores: &mut VaultStores) -
 
     match append_subsection::execute(
         &stores.blocks,
-        &mut stores.documents,
+        &stores.documents,
         document_id,
         section_block_id,
         block_id,
     ) {
-        Ok(event) => {
+        Ok(result) => {
             let event_fields = json_map(json!({
-                "document_id": event.document_id.to_string(),
-                "block_id": event.block_id.to_string(),
+                "document_id": result.event.document_id.to_string(),
+                "block_id": result.event.block_id.to_string(),
             }));
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "SectionAppended".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 
@@ -382,20 +365,19 @@ fn dispatch_remove_section(cmd: &ScenarioCommand, stores: &mut VaultStores) -> C
     let document_id = payload_uuid(cmd, "document_id");
     let block_id = payload_uuid(cmd, "block_id");
 
-    match remove_section::execute(&mut stores.documents, document_id, block_id) {
-        Ok(event) => {
+    match remove_section::execute(&stores.documents, document_id, block_id) {
+        Ok(result) => {
             let event_fields = json_map(json!({
-                "document_id": event.document_id.to_string(),
-                "block_id": event.block_id.to_string(),
+                "document_id": result.event.document_id.to_string(),
+                "block_id": result.event.block_id.to_string(),
             }));
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "SectionRemoved".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 
@@ -411,19 +393,18 @@ fn dispatch_reorder_sections(cmd: &ScenarioCommand, stores: &mut VaultStores) ->
         })
         .collect();
 
-    match reorder_sections::execute(&mut stores.documents, document_id, order) {
-        Ok(event) => {
+    match reorder_sections::execute(&stores.documents, document_id, order) {
+        Ok(result) => {
             let event_fields = json_map(json!({
-                "document_id": event.document_id.to_string(),
+                "document_id": result.event.document_id.to_string(),
             }));
+            changeset::apply_writes(stores, result.writes);
             CommandOutcome::Success {
                 event_name: "SectionsReordered".to_string(),
                 event_fields,
             }
         }
-        Err(e) => CommandOutcome::Rejected {
-            error: e.to_string(),
-        },
+        Err(e) => CommandOutcome::Rejected { error: e.to_string() },
     }
 }
 

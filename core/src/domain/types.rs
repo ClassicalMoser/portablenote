@@ -4,15 +4,20 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// The atomic unit of knowledge. A block is a named, content-bearing entity
+/// stored as a single `.md` file in the vault's `blocks/` directory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub id: Uuid,
+    /// Human-readable name — vault-wide unique, used in `[[wikilink]]` syntax.
     pub name: String,
+    /// Markdown body. Must not contain heading syntax outside fenced code blocks.
     pub content: String,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
 }
 
+/// A directed, typed reference between two blocks in the graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
     pub id: Uuid,
@@ -20,24 +25,32 @@ pub struct Edge {
     pub target: Uuid,
 }
 
+/// A depth-3 entry within a document section.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Subsection {
     pub block: Uuid,
 }
 
+/// A depth-2 entry in a document, containing zero or more subsections.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Section {
     pub block: Uuid,
     pub subsections: Vec<Subsection>,
 }
 
+/// An ordered composition of blocks from the heap, forming a readable document.
+/// The same block may appear in multiple documents. Documents never affect the
+/// graph — they are views, not sources of truth.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
     pub id: Uuid,
+    /// The block whose name becomes the document title (heading level 1).
     pub root: Uuid,
     pub sections: Vec<Section>,
 }
 
+/// Top-level vault metadata stored in `manifest.json`. The checksum is
+/// recomputed after every successful mutation to detect external drift.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub vault_id: Uuid,
@@ -46,6 +59,8 @@ pub struct Manifest {
     pub checksum: String,
 }
 
+/// The vault's explicit reference graph, stored in `block-graph.json`.
+/// Edges are first-class artifacts — they are not derived from scanning content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockGraph {
     pub version: String,

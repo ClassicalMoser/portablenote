@@ -10,6 +10,8 @@ PortableNote is a directory-based knowledge management format where the block gr
 portablenote/
   spec/                  Format specification, JSON schemas, compliance test suite
   core/                  Reference implementation in Rust (portablenote-core)
+  infra/                 Infrastructure adapters (portablenote-infra)
+  cli/                   Command-line interface (pn)
 ```
 
 ### `spec/`
@@ -23,6 +25,14 @@ See [`spec/README.md`](spec/README.md) for details.
 The reference Rust implementation. A hexagonal-architecture domain library with pure functions, port traits, and use cases. No I/O in the domain layer; infrastructure adapters live outside this crate.
 
 See [`core/ARCHITECTURE.md`](core/ARCHITECTURE.md) for the implementation's design.
+
+### `infra/`
+
+Filesystem adapters that implement the port traits from `core`. Each vault artifact maps to files on disk: blocks as `.md` files, the graph as `block-graph.json`, documents as individual JSON files, and the name index as `names.json`.
+
+### `cli/`
+
+The `pn` command-line tool for local vault management. Supports `init`, `add`, `rename`, `edit`, `delete`, `link`, `unlink`, and `list` commands. Uses `infra` adapters to persist changes to disk.
 
 ## Key Concepts
 

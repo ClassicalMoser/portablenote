@@ -7,6 +7,8 @@ pub struct Violation {
     pub details: ViolationDetails,
 }
 
+/// Machine-readable detail for a specific invariant violation, enabling
+/// targeted remediation or reporting.
 #[derive(Debug, Clone)]
 pub enum ViolationDetails {
     DanglingEdgeUuid {
