@@ -29,7 +29,7 @@ pub fn execute(
     let edge = edges::create(id, source, target);
 
     Ok(CommandResult {
-        writes: vec![VaultWrite::SaveEdge(edge)],
+        writes: vec![VaultWrite::WriteEdge(edge)],
         event: EdgeAdded { edge_id: id, source, target },
     })
 }
@@ -69,7 +69,7 @@ mod tests {
         assert_eq!(result.event.source, src());
         assert_eq!(result.event.target, tgt());
         assert_eq!(result.writes.len(), 1);
-        assert!(matches!(&result.writes[0], VaultWrite::SaveEdge(e) if e.id == edge_id()));
+        assert!(matches!(&result.writes[0], VaultWrite::WriteEdge(e) if e.id == edge_id()));
     }
 
     #[test]

@@ -33,9 +33,9 @@ pub fn execute(
     let (propagated, refs_updated) = blocks::propagate_rename(referencing, &old_name, new_name);
 
     let mut writes = Vec::new();
-    writes.push(VaultWrite::SaveBlock(renamed.clone()));
+    writes.push(VaultWrite::WriteBlock(renamed.clone()));
     for b in &propagated {
-        writes.push(VaultWrite::SaveBlock(b.clone()));
+        writes.push(VaultWrite::WriteBlock(b.clone()));
     }
     writes.push(VaultWrite::RemoveName(old_name.clone()));
     writes.push(VaultWrite::SetName { name: new_name.to_string(), id: block_id });
@@ -105,7 +105,7 @@ mod tests {
 
         // SaveBlock(renamed), RemoveName(old), SetName(new)
         assert_eq!(result.writes.len(), 3);
-        assert!(matches!(&result.writes[0], VaultWrite::SaveBlock(b) if b.name == "Beta"));
+        assert!(matches!(&result.writes[0], VaultWrite::WriteBlock(b) if b.name == "Beta"));
         assert!(matches!(&result.writes[1], VaultWrite::RemoveName(n) if n == "Alpha"));
         assert!(matches!(&result.writes[2], VaultWrite::SetName { name, .. } if name == "Beta"));
     }
@@ -140,7 +140,7 @@ mod tests {
 
         // SaveBlock(renamed), SaveBlock(propagated), RemoveName, SetName
         assert_eq!(result.writes.len(), 4);
-        assert!(matches!(&result.writes[1], VaultWrite::SaveBlock(b) if b.content.contains("[[Beta]]")));
+        assert!(matches!(&result.writes[1], VaultWrite::WriteBlock(b) if b.content.contains("[[Beta]]")));
         assert_eq!(result.event.refs_updated, 1);
     }
 

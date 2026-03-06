@@ -27,7 +27,7 @@ pub fn execute(
 
     Ok(CommandResult {
         writes: vec![
-            VaultWrite::SaveBlock(block),
+            VaultWrite::WriteBlock(block),
             VaultWrite::SetName { name: name.to_string(), id },
         ],
         event: BlockAdded {
@@ -73,7 +73,7 @@ mod tests {
         assert_eq!(result.event.block_id, id());
         assert_eq!(result.event.name, "Alpha");
         assert_eq!(result.writes.len(), 2);
-        assert!(matches!(&result.writes[0], VaultWrite::SaveBlock(b) if b.id == id() && b.name == "Alpha" && b.content == "content"));
+        assert!(matches!(&result.writes[0], VaultWrite::WriteBlock(b) if b.id == id() && b.name == "Alpha" && b.content == "content"));
         assert!(matches!(&result.writes[1], VaultWrite::SetName { name, id: wid } if name == "Alpha" && *wid == id()));
     }
 

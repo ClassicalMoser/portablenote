@@ -30,7 +30,8 @@ impl VaultSession {
             "vault_id": Uuid::new_v4().to_string(),
             "spec_version": "0.1.0",
             "format": "markdown",
-            "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "previous_checksum": null
         });
         std::fs::write(
             pn.join("manifest.json"),
@@ -96,11 +97,11 @@ impl VaultSession {
     pub fn apply_writes(&mut self, writes: Vec<VaultWrite>) {
         for write in writes {
             match write {
-                VaultWrite::SaveBlock(block) => self.blocks.save(&block),
+                VaultWrite::WriteBlock(block) => self.blocks.save(&block),
                 VaultWrite::DeleteBlock(id) => self.blocks.delete(id),
-                VaultWrite::SaveEdge(edge) => self.graph.save_edge(&edge),
+                VaultWrite::WriteEdge(edge) => self.graph.save_edge(&edge),
                 VaultWrite::RemoveEdge(id) => self.graph.remove_edge(id),
-                VaultWrite::SaveDocument(doc) => self.documents.save(&doc),
+                VaultWrite::WriteDocument(doc) => self.documents.save(&doc),
                 VaultWrite::DeleteDocument(id) => self.documents.delete(id),
                 VaultWrite::SetName { name, id } => self.names.set(&name, id),
                 VaultWrite::RemoveName(name) => self.names.remove(&name),

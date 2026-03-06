@@ -22,7 +22,7 @@ pub fn execute(
         .ok_or(DomainError::SectionNotFound(block_id))?;
 
     Ok(CommandResult {
-        writes: vec![VaultWrite::SaveDocument(updated)],
+        writes: vec![VaultWrite::WriteDocument(updated)],
         event: SectionRemoved { document_id, block_id },
     })
 }
@@ -59,7 +59,7 @@ mod tests {
 
         assert_eq!(result.event.block_id, s1());
         assert_eq!(result.writes.len(), 1);
-        assert!(matches!(&result.writes[0], VaultWrite::SaveDocument(d) if d.sections.is_empty()));
+        assert!(matches!(&result.writes[0], VaultWrite::WriteDocument(d) if d.sections.is_empty()));
     }
 
     #[test]

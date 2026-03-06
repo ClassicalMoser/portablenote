@@ -21,7 +21,7 @@ pub fn execute(
     let updated = blocks::apply_content(block, content)?;
 
     Ok(CommandResult {
-        writes: vec![VaultWrite::SaveBlock(updated)],
+        writes: vec![VaultWrite::WriteBlock(updated)],
         event: BlockContentMutated { block_id },
     })
 }
@@ -63,7 +63,7 @@ mod tests {
 
         assert_eq!(result.event.block_id, id());
         assert_eq!(result.writes.len(), 1);
-        assert!(matches!(&result.writes[0], VaultWrite::SaveBlock(b) if b.content == "new content"));
+        assert!(matches!(&result.writes[0], VaultWrite::WriteBlock(b) if b.content == "new content"));
     }
 
     #[test]

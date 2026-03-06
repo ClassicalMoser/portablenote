@@ -49,14 +49,18 @@ pub struct Document {
     pub sections: Vec<Section>,
 }
 
-/// Top-level vault metadata stored in `manifest.json`. The checksum is
-/// recomputed after every successful mutation to detect external drift.
+/// Top-level vault metadata stored in `manifest.json`. The checksum chain
+/// (`previous_checksum` → `checksum`) records each committed state transition
+/// and allows fork detection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub vault_id: Uuid,
     pub spec_version: String,
     pub format: String,
     pub checksum: String,
+    /// Checksum of the vault state before the most recent commit.
+    /// `None` only for the genesis commit (vault init).
+    pub previous_checksum: Option<String>,
 }
 
 /// The vault's explicit reference graph, stored in `block-graph.json`.

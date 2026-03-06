@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vault-writes.schema.json",
+  "title": "PortableNote Vault Write Algebra",
+  "description": "The complete set of primitive mutations that can be applied to a vault. Each write is an atomic operation on a single artifact kind. A commit is an ordered list of writes applied as a unit.",
+  "$defs": {
+    "write": {
+      "description": "One primitive vault mutation.",
+      "oneOf": [
+        { "$ref": "#/$defs/WriteBlock" },
+        { "$ref": "#/$defs/DeleteBlock" },
+        { "$ref": "#/$defs/WriteEdge" },
+        { "$ref": "#/$defs/RemoveEdge" },
+        { "$ref": "#/$defs/WriteDocument" },
+        { "$ref": "#/$defs/DeleteDocument" },
+        { "$ref": "#/$defs/SetName" },
+        { "$ref": "#/$defs/RemoveName" }
+      ]
+    },
+
+    "WriteBlock": {
+      "description": "Upsert a block. Creates or replaces the block with the given id.",
+      "type": "object",
+      "required": ["kind", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "WriteBlock" },
+        "data": { "$ref": "./block.schema.json" }
+      }
+    },
+    "DeleteBlock": {
+      "description": "Delete the block with the given id.",
+      "type": "object",
+      "required": ["kind", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "DeleteBlock" },
+        "id": { "type": "string", "format": "uuid" }
+      }
+    },
+
+    "WriteEdge": {
+      "description": "Upsert an edge. Creates or replaces the edge with the given id.",
+      "type": "object",
+      "required": ["kind", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "WriteEdge" },
+        "data": { "$ref": "./block-graph.schema.json#/$defs/edge" }
+      }
+    },
+    "RemoveEdge": {
+      "description": "Remove the edge with the given id.",
+      "type": "object",
+      "required": ["kind", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "RemoveEdge" },
+        "id": { "type": "string", "format": "uuid" }
+      }
+    },
+
+    "WriteDocument": {
+      "description": "Upsert a document definition. Creates or replaces the document with the given id.",
+      "type": "object",
+      "required": ["kind", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "WriteDocument" },
+        "data": { "$ref": "./document.schema.json" }
+      }
+    },
+    "DeleteDocument": {
+      "description": "Delete the document definition with the given id.",
+      "type": "object",
+      "required": ["kind", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "DeleteDocument" },
+        "id": { "type": "string", "format": "uuid" }
+      }
+    },
+
+    "SetName": {
+      "description": "Register or overwrite a name-to-UUID mapping in the names index.",
+      "type": "object",
+      "required": ["kind", "name", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "SetName" },
+        "name": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "format": "uuid" }
+      }
+    },
+    "RemoveName": {
+      "description": "Remove a name entry from the names index.",
+      "type": "object",
+      "required": ["kind", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "RemoveName" },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -27,7 +27,7 @@ pub fn execute(
         .ok_or(DomainError::SectionNotFound(section_block_id))?;
 
     Ok(CommandResult {
-        writes: vec![VaultWrite::SaveDocument(updated)],
+        writes: vec![VaultWrite::WriteDocument(updated)],
         event: SectionAppended { document_id, block_id, depth: 2 },
     })
 }
@@ -73,7 +73,7 @@ mod tests {
         assert_eq!(result.event.depth, 2);
         assert_eq!(result.event.block_id, sub());
         assert_eq!(result.writes.len(), 1);
-        assert!(matches!(&result.writes[0], VaultWrite::SaveDocument(_)));
+        assert!(matches!(&result.writes[0], VaultWrite::WriteDocument(_)));
     }
 
     #[test]

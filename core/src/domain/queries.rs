@@ -89,6 +89,7 @@ mod tests {
                 spec_version: "0.1.0".to_string(),
                 format: "portablenote".to_string(),
                 checksum: String::new(),
+                previous_checksum: None,
             },
             blocks: HashMap::new(),
             graph: BlockGraph {
@@ -120,6 +121,7 @@ mod tests {
                 spec_version: "0.1.0".to_string(),
                 format: "portablenote".to_string(),
                 checksum: String::new(),
+                previous_checksum: None,
             },
             blocks,
             graph: BlockGraph {

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "block.schema.json",
+  "title": "PortableNote Block",
+  "description": "The atomic unit of knowledge. A named, content-bearing entity stored as a single file in the vault's blocks/ directory.",
+  "type": "object",
+  "required": ["id", "name", "content", "created", "modified"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Permanent block identity. UUID v4. Never changes."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable name. Vault-wide unique (case-insensitive). The linking handle for wikilink syntax."
+    },
+    "content": {
+      "type": "string",
+      "description": "Block body. For markdown format: CommonMark compliant, no heading syntax outside fenced code blocks. LF line endings."
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 creation timestamp."
+    },
+    "modified": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 last modification timestamp. Updated on every content mutation."
+    }
+  }
+}

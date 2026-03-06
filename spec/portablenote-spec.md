@@ -432,7 +432,6 @@ The journal is a JSON file with the following schema:
 
 ```json
 {
-  "previous_checksum": "sha256:<hex>",
   "expected_checksum": "sha256:<hex>",
   "before_image": [
     { "kind": "Block", "data": { ... } },
@@ -457,7 +456,6 @@ The journal is a JSON file with the following schema:
 
 | Field | Description |
 |---|---|
-| `previous_checksum` | The manifest's current `checksum` at the time the journal was written. The "before" state of this transition. |
 | `expected_checksum` | The checksum the vault will have after all writes land. The "after" state. |
 | `before_image` | Full prior state of every artifact that `writes` will modify or delete. Sufficient to fully undo the operation. |
 | `writes` | The ordered list of writes to apply. Applied in sequence. |
@@ -477,7 +475,7 @@ A conforming implementation must apply writes in this exact order:
 
 1. **Write `.journal`** — Atomically (temp file + rename on POSIX, or equivalent). The journal must be fully durable before any vault artifact is modified.
 2. **Apply writes** — Apply every entry in `writes` in order to the vault artifacts (blocks, graph, names, documents).
-3. **Write manifest** — Atomically write `manifest.json` with `checksum` set to `expected_checksum` and `previous_checksum` set to the old checksum. This is the **commit point**: once the manifest is written, the commit is complete.
+3. **Write manifest** — Atomically write `manifest.json` with `checksum` set to `expected_checksum` and `previous_checksum` set to the current `manifest.checksum` (the pre-commit state). This is the **commit point**: once the manifest is written, the commit is complete.
 4. **Delete `.journal`** — Clean up.
 
 Step 3 is the commit point. If the process crashes after step 1 but before step 3, the journal is present on next open and recovery applies. If the process crashes after step 3, the journal may or may not be deleted — that is harmless, as recovery will detect Case A.
@@ -492,9 +490,9 @@ Compute the actual checksum from the current vault contents (using the canonical
 
 | Case | Condition | Action |
 |---|---|---|
-| **A — Writes landed, manifest lost** | actual == `expected_checksum` | Rewrite manifest with `expected_checksum` (as `checksum`) and `previous_checksum`. Delete journal. Vault is clean. |
-| **B — No writes landed** | actual == `previous_checksum` | Delete journal. Vault is clean at prior state. |
-| **C — Partial writes** | actual matches neither | Apply undo: restore every entry in `before_image` to disk, recompute checksum, verify it matches `previous_checksum`. Rewrite manifest with `previous_checksum` as `checksum`. Delete journal. Emit a warning. |
+| **A — Writes landed, manifest lost** | actual == `expected_checksum` | Rewrite manifest: set `checksum` to `expected_checksum`, set `previous_checksum` to current `manifest.checksum`. Delete journal. Vault is clean. |
+| **B — No writes landed** | actual == `manifest.checksum` | Delete journal. Vault is clean at prior state. |
+| **C — Partial writes** | actual matches neither | Apply undo: restore every entry in `before_image` to disk, recompute checksum, verify it matches `manifest.checksum`. Rewrite manifest with `manifest.checksum` as `checksum` (no change to `previous_checksum`). Delete journal. Emit a warning. |
 
 Case C undo is the mandated recovery strategy. Implementations must not silently accept a partial-write state.
 

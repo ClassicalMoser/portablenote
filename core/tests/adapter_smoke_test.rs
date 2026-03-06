@@ -40,7 +40,7 @@ fn add_block_round_trip() {
             .unwrap();
 
     // Block is in the first write
-    assert!(matches!(&result.writes[0], VaultWrite::SaveBlock(b) if b.id == new_id));
+    assert!(matches!(&result.writes[0], VaultWrite::WriteBlock(b) if b.id == new_id));
     assert_eq!(result.event.name, "New Block");
 
     changeset::apply_writes(&mut stores, result.writes);
@@ -80,7 +80,7 @@ fn rename_block_propagates_refs() {
     .unwrap();
 
     // Renamed block is in the first write
-    assert!(matches!(&result.writes[0], VaultWrite::SaveBlock(b) if b.name == "Quick Start"));
+    assert!(matches!(&result.writes[0], VaultWrite::WriteBlock(b) if b.name == "Quick Start"));
     assert_eq!(result.event.old_name, "Getting Started");
     assert_eq!(result.event.refs_updated, 1);
 

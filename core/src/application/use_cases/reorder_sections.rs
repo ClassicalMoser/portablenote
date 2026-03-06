@@ -23,7 +23,7 @@ pub fn execute(
         .ok_or(DomainError::InvalidSectionOrder)?;
 
     Ok(CommandResult {
-        writes: vec![VaultWrite::SaveDocument(updated)],
+        writes: vec![VaultWrite::WriteDocument(updated)],
         event: SectionsReordered { document_id },
     })
 }
@@ -65,7 +65,7 @@ mod tests {
 
         assert_eq!(result.event.document_id, doc_id());
         assert_eq!(result.writes.len(), 1);
-        assert!(matches!(&result.writes[0], VaultWrite::SaveDocument(d) if d.sections[0].block == s2()));
+        assert!(matches!(&result.writes[0], VaultWrite::WriteDocument(d) if d.sections[0].block == s2()));
     }
 
     #[test]

@@ -28,7 +28,7 @@ pub fn execute(
 
     let mut writes = Vec::new();
     for b in &reverted_blocks {
-        writes.push(VaultWrite::SaveBlock(b.clone()));
+        writes.push(VaultWrite::WriteBlock(b.clone()));
     }
     for e in &all_edges {
         writes.push(VaultWrite::RemoveEdge(e.id));
@@ -123,7 +123,7 @@ mod tests {
 
         let result = execute(&blocks, &graph, id()).unwrap();
 
-        assert!(result.writes.iter().any(|w| matches!(w, VaultWrite::SaveBlock(b) if b.content.contains("See Alpha here."))));
+        assert!(result.writes.iter().any(|w| matches!(w, VaultWrite::WriteBlock(b) if b.content.contains("See Alpha here."))));
         assert_eq!(result.event.inline_refs_reverted, 1);
     }
 

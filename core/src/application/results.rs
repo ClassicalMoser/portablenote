@@ -16,11 +16,11 @@ use crate::domain::types::{Block, Document, Edge};
 /// the block they referenced).
 #[derive(Debug, Clone)]
 pub enum VaultWrite {
-    SaveBlock(Block),
+    WriteBlock(Block),
     DeleteBlock(Uuid),
-    SaveEdge(Edge),
+    WriteEdge(Edge),
     RemoveEdge(Uuid),
-    SaveDocument(Document),
+    WriteDocument(Document),
     DeleteDocument(Uuid),
     SetName { name: String, id: Uuid },
     RemoveName(String),

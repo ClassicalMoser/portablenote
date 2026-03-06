@@ -25,7 +25,7 @@ pub fn execute(
     let updated = documents::append_section(doc, block_id);
 
     Ok(CommandResult {
-        writes: vec![VaultWrite::SaveDocument(updated)],
+        writes: vec![VaultWrite::WriteDocument(updated)],
         event: SectionAppended { document_id, block_id, depth: 1 },
     })
 }
@@ -63,7 +63,7 @@ mod tests {
 
         assert_eq!(result.event.depth, 1);
         assert_eq!(result.writes.len(), 1);
-        assert!(matches!(&result.writes[0], VaultWrite::SaveDocument(d) if d.sections.len() == 1));
+        assert!(matches!(&result.writes[0], VaultWrite::WriteDocument(d) if d.sections.len() == 1));
     }
 
     #[test]

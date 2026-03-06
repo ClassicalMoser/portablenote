@@ -34,7 +34,7 @@ pub fn execute(
 
     let mut writes = Vec::new();
     for b in &reverted_blocks {
-        writes.push(VaultWrite::SaveBlock(b.clone()));
+        writes.push(VaultWrite::WriteBlock(b.clone()));
     }
     for e in &outgoing {
         writes.push(VaultWrite::RemoveEdge(e.id));

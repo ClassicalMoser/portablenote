@@ -1,222 +1,94 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "journal.schema.json",
   "title": "PortableNote Commit Journal",
-  "description": "Ephemeral write-ahead journal. Present only during an in-flight commit. On vault open, its presence triggers the recovery protocol (§5a of the spec).",
+  "description": "Ephemeral write-ahead log. Present only during an in-flight commit. On vault open, its presence triggers the recovery protocol (§5a of the spec).",
   "type": "object",
-  "required": ["previous_checksum", "expected_checksum", "before_image", "writes"],
+  "required": ["expected_checksum", "before_image", "writes"],
   "additionalProperties": false,
   "properties": {
-    "previous_checksum": {
-      "type": "string",
-      "pattern": "^sha256:[a-f0-9]{64}$",
-      "description": "The manifest's checksum at the time this journal was written. The 'before' state of the transition. Used in recovery to determine whether writes landed."
-    },
     "expected_checksum": {
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$",
-      "description": "The checksum the vault will have after all writes in this journal are applied. The 'after' state. Used in recovery to determine whether the commit completed."
+      "description": "The checksum the vault will have after all writes are applied — the 'after' state. Recovery Case A: if actual vault checksum matches this, all writes landed but the manifest write was lost."
     },
     "before_image": {
       "type": "array",
-      "description": "Full prior state of every artifact that writes will modify or delete. Applied in reverse to undo a partial commit (Case C recovery).",
+      "description": "Full prior state of every artifact that writes will modify or delete. Applied to undo a partial commit (Case C recovery).",
       "items": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": ["kind", "data"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["Block"] },
-              "data": {
-                "description": "Full block as stored. null if this block did not exist before the commit (undo = delete).",
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "required": ["id", "name", "content", "created", "modified"],
-                    "properties": {
-                      "id": { "type": "string", "format": "uuid" },
-                      "name": { "type": "string" },
-                      "content": { "type": "string" },
-                      "created": { "type": "string", "format": "date-time" },
-                      "modified": { "type": "string", "format": "date-time" }
-                    }
-                  },
-                  { "type": "null" }
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": ["kind", "data"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["Edge"] },
-              "data": {
-                "description": "Full edge as stored. null if this edge did not exist before the commit.",
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "required": ["id", "source", "target"],
-                    "properties": {
-                      "id": { "type": "string", "format": "uuid" },
-                      "source": { "type": "string", "format": "uuid" },
-                      "target": { "type": "string", "format": "uuid" }
-                    }
-                  },
-                  { "type": "null" }
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": ["kind", "data"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["Document"] },
-              "data": {
-                "description": "Full document as stored. null if this document did not exist before the commit.",
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "required": ["id", "root", "sections"],
-                    "properties": {
-                      "id": { "type": "string", "format": "uuid" },
-                      "root": { "type": "string", "format": "uuid" },
-                      "sections": { "type": "array" }
-                    }
-                  },
-                  { "type": "null" }
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": ["kind", "name", "data"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["Name"] },
-              "name": { "type": "string", "description": "The name entry key." },
-              "data": {
-                "description": "The UUID this name mapped to before the commit. null if this name did not exist before the commit (undo = remove the name entry).",
-                "oneOf": [
-                  { "type": "string", "format": "uuid" },
-                  { "type": "null" }
-                ]
-              }
-            }
-          }
-        ]
+        "$ref": "#/$defs/before_image_entry"
       }
     },
     "writes": {
       "type": "array",
       "description": "Ordered list of vault writes to apply. Applied in sequence during commit and for redo recovery.",
       "items": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": ["kind", "data"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["WriteBlock"] },
-              "data": {
-                "type": "object",
-                "required": ["id", "name", "content", "created", "modified"],
-                "properties": {
-                  "id": { "type": "string", "format": "uuid" },
-                  "name": { "type": "string" },
-                  "content": { "type": "string" },
-                  "created": { "type": "string", "format": "date-time" },
-                  "modified": { "type": "string", "format": "date-time" }
-                }
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": ["kind", "id"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["DeleteBlock"] },
-              "id": { "type": "string", "format": "uuid" }
-            }
-          },
-          {
-            "type": "object",
-            "required": ["kind", "data"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["WriteEdge"] },
-              "data": {
-                "type": "object",
-                "required": ["id", "source", "target"],
-                "properties": {
-                  "id": { "type": "string", "format": "uuid" },
-                  "source": { "type": "string", "format": "uuid" },
-                  "target": { "type": "string", "format": "uuid" }
-                }
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": ["kind", "id"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["RemoveEdge"] },
-              "id": { "type": "string", "format": "uuid" }
-            }
-          },
-          {
-            "type": "object",
-            "required": ["kind", "data"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["WriteDocument"] },
-              "data": {
-                "type": "object",
-                "required": ["id", "root", "sections"],
-                "properties": {
-                  "id": { "type": "string", "format": "uuid" },
-                  "root": { "type": "string", "format": "uuid" },
-                  "sections": { "type": "array" }
-                }
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": ["kind", "id"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["DeleteDocument"] },
-              "id": { "type": "string", "format": "uuid" }
-            }
-          },
-          {
-            "type": "object",
-            "required": ["kind", "name", "id"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["SetName"] },
-              "name": { "type": "string" },
-              "id": { "type": "string", "format": "uuid" }
-            }
-          },
-          {
-            "type": "object",
-            "required": ["kind", "name"],
-            "additionalProperties": false,
-            "properties": {
-              "kind": { "type": "string", "enum": ["RemoveName"] },
-              "name": { "type": "string" }
+        "$ref": "./vault-writes.schema.json#/$defs/write"
+      }
+    }
+  },
+  "$defs": {
+    "before_image_entry": {
+      "description": "The prior state of a single artifact before this commit. data is null if the artifact was created by this commit — undo means delete it.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "data"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "type": "string", "const": "Block" },
+            "data": {
+              "oneOf": [
+                { "$ref": "./block.schema.json" },
+                { "type": "null" }
+              ]
             }
           }
-        ]
-      }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "data"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "type": "string", "const": "Edge" },
+            "data": {
+              "oneOf": [
+                { "$ref": "./block-graph.schema.json#/$defs/edge" },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "data"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "type": "string", "const": "Document" },
+            "data": {
+              "oneOf": [
+                { "$ref": "./document.schema.json" },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "name", "data"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "type": "string", "const": "Name" },
+            "name": { "type": "string", "minLength": 1 },
+            "data": {
+              "oneOf": [
+                { "type": "string", "format": "uuid" },
+                { "type": "null" }
+              ]
+            }
+          }
+        }
+      ]
     }
   }
 }

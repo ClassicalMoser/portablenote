@@ -25,7 +25,7 @@ pub fn execute(
     let doc = documents::create(id, root);
 
     Ok(CommandResult {
-        writes: vec![VaultWrite::SaveDocument(doc)],
+        writes: vec![VaultWrite::WriteDocument(doc)],
         event: DocumentAdded { document_id: id, root_block_id: root },
     })
 }
@@ -61,7 +61,7 @@ mod tests {
         assert_eq!(result.event.document_id, doc_id());
         assert_eq!(result.event.root_block_id, root());
         assert_eq!(result.writes.len(), 1);
-        assert!(matches!(&result.writes[0], VaultWrite::SaveDocument(d) if d.id == doc_id()));
+        assert!(matches!(&result.writes[0], VaultWrite::WriteDocument(d) if d.id == doc_id()));
     }
 
     #[test]

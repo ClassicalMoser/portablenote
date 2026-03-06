@@ -17,9 +17,12 @@ The full specification is in [`portablenote-spec.md`](portablenote-spec.md).
 spec/
   portablenote-spec.md        Normative specification document
   schemas/                    JSON schemas for vault artifacts
+    block.schema.json         Block type (canonical; referenced by vault-writes and journal)
     manifest.schema.json      Vault manifest (identity, checksum chain)
-    block-graph.schema.json   Block reference graph
+    block-graph.schema.json   Block reference graph (edges)
     document.schema.json      Document composition definition
+    names.schema.json         Name-to-UUID index
+    vault-writes.schema.json  Vault write algebra (8 primitive mutation kinds + before-image)
     journal.schema.json       Commit journal (ephemeral; crash-recovery write-ahead log)
   compliance/                 Test fixtures for conformance testing
     valid/                    Vault directories that must pass validation

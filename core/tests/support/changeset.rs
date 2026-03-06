@@ -12,11 +12,11 @@ use super::in_memory::VaultStores;
 pub fn apply_writes(stores: &mut VaultStores, writes: Vec<VaultWrite>) {
     for write in writes {
         match write {
-            VaultWrite::SaveBlock(block) => stores.blocks.save(&block),
+            VaultWrite::WriteBlock(block) => stores.blocks.save(&block),
             VaultWrite::DeleteBlock(id) => stores.blocks.delete(id),
-            VaultWrite::SaveEdge(edge) => stores.graph.save_edge(&edge),
+            VaultWrite::WriteEdge(edge) => stores.graph.save_edge(&edge),
             VaultWrite::RemoveEdge(id) => stores.graph.remove_edge(id),
-            VaultWrite::SaveDocument(doc) => stores.documents.save(&doc),
+            VaultWrite::WriteDocument(doc) => stores.documents.save(&doc),
             VaultWrite::DeleteDocument(id) => stores.documents.delete(id),
             VaultWrite::SetName { name, id } => stores.names.set(&name, id),
             VaultWrite::RemoveName(name) => stores.names.remove(&name),
