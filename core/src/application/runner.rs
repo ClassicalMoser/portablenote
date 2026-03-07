@@ -90,6 +90,7 @@ impl<'a> UseCases<'a> {
         delete_block_cascade::execute(
             self.ports.blocks,
             self.ports.graph,
+            self.ports.documents,
             self.ports.clock,
             block_id,
         )

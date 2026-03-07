@@ -114,6 +114,11 @@ pub enum DomainError {
     #[error("Remediation required: checksum mismatch and {0} validation violation(s). Fix the vault before mutating.")]
     RemediationRequired(usize),
 
+    /// Optimistic concurrency: command was issued against a different vault state.
+    /// Client sent expected_checksum (e.g. manifest.checksum at read time); current manifest does not match.
+    #[error("Stale state: expected checksum {expected:?}, current {actual:?}. Refresh and retry.")]
+    StaleState { expected: String, actual: String },
+
     /// I/O or persistence error (e.g. journal write/delete, manifest write).
     #[error("I/O error: {0}")]
     Io(String),

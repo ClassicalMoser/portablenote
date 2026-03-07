@@ -1,3 +1,4 @@
+use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 use crate::application::ports::{BlockStore, Clock, NameIndex};
@@ -9,6 +10,7 @@ use crate::domain::events::BlockAdded;
 /// Create a new block. Rejects duplicate names and IDs.
 ///
 /// Multi-store: returns a `CommandResult` with `SaveBlock` and `SetName` writes.
+/// The name is NFC-normalized before storage per spec §1.
 pub fn execute(
     blocks: &dyn BlockStore,
     names: &dyn NameIndex,
@@ -17,25 +19,27 @@ pub fn execute(
     name: &str,
     content: &str,
 ) -> Result<CommandResult<BlockAdded>, DomainError> {
-    if let Some((_, existing_id)) = names.resolve_ignore_case(name) {
+    let name: String = name.nfc().collect();
+
+    if let Some((_, existing_id)) = names.resolve_ignore_case(&name) {
         if existing_id != id {
-            return Err(DomainError::NameConflict(name.to_string(), existing_id));
+            return Err(DomainError::NameConflict(name, existing_id));
         }
     }
     if blocks.get(id).is_some() {
         return Err(DomainError::DuplicateId(id));
     }
 
-    let block = blocks::create(id, name, content, clock.now())?;
+    let block = blocks::create(id, &name, content, clock.now())?;
 
     Ok(CommandResult {
         writes: vec![
             VaultWrite::WriteBlock(block),
-            VaultWrite::SetName { name: name.to_string(), id },
+            VaultWrite::SetName { name: name.clone(), id },
         ],
         event: BlockAdded {
             block_id: id,
-            name: name.to_string(),
+            name,
         },
     })
 }
@@ -143,6 +147,30 @@ mod tests {
         let clock = mock_clock();
         let result = execute(&blocks, &names, &clock, id(), "Alpha", "content");
         assert!(matches!(result, Err(DomainError::DuplicateId(_))));
+    }
+
+    #[test]
+    fn nfd_name_is_stored_as_nfc() {
+        let mut blocks = MockBlockStore::new();
+        let mut names = MockNameIndex::new();
+        let clock = mock_clock();
+
+        // NFD input: "cafe\u{0301}" should become NFC "caf\u{00e9}" in writes
+        let nfd_name = "cafe\u{0301}";
+        let nfc_name = "caf\u{00e9}";
+
+        names
+            .expect_resolve_ignore_case()
+            .return_once(|_| None);
+        blocks
+            .expect_get()
+            .return_once(|_| None);
+
+        let result = execute(&blocks, &names, &clock, id(), nfd_name, "content").unwrap();
+
+        assert_eq!(result.event.name, nfc_name);
+        assert!(matches!(&result.writes[0], VaultWrite::WriteBlock(b) if b.name == nfc_name));
+        assert!(matches!(&result.writes[1], VaultWrite::SetName { name, .. } if name == nfc_name));
     }
 
     #[test]

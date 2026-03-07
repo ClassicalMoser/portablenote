@@ -45,10 +45,13 @@ impl FsMutationGate<'_> {
 }
 
 impl MutationGate for FsMutationGate<'_> {
-    fn allow_mutation(&self) -> Result<(), DomainError> {
+    fn allow_mutation(
+        &self,
+        expected_checksum: Option<String>,
+    ) -> Result<(), DomainError> {
         let Some(vault) = self.build_vault() else {
             return Ok(());
         };
-        gate::mutation_gate(&vault)
+        gate::mutation_gate(&vault, expected_checksum.as_deref())
     }
 }

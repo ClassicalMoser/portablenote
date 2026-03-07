@@ -216,7 +216,7 @@ impl VaultSession {
             names: &self.names,
             manifest: &self.manifest,
         };
-        gate.allow_mutation()
+        gate.allow_mutation(None)
     }
 
     /// §5a: write journal, apply writes (and commit manifest), delete journal.

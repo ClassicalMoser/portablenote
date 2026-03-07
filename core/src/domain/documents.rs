@@ -72,6 +72,39 @@ pub fn remove_section(mut doc: Document, block_id: Uuid) -> Option<Document> {
     Some(doc)
 }
 
+/// Remove a subsection by its block id. Returns `None` if no subsection has that block.
+pub fn remove_subsection(mut doc: Document, block_id: Uuid) -> Option<Document> {
+    for section in &mut doc.sections {
+        if let Some(pos) = section.subsections.iter().position(|s| s.block == block_id) {
+            section.subsections.remove(pos);
+            return Some(doc);
+        }
+    }
+    None
+}
+
+/// Result of removing a block from a document: either the doc is updated or must be deleted (block was root).
+#[derive(Debug, Clone)]
+pub enum RemoveBlockResult {
+    Updated(Document),
+    DeleteDocument,
+}
+
+/// Remove a block from a document wherever it appears (root, section, or subsection).
+/// Returns `None` if the document does not reference the block.
+pub fn remove_block_from_document(doc: Document, block_id: Uuid) -> Option<RemoveBlockResult> {
+    if doc.root == block_id {
+        return Some(RemoveBlockResult::DeleteDocument);
+    }
+    if doc.sections.iter().any(|s| s.block == block_id) {
+        return remove_section(doc, block_id).map(RemoveBlockResult::Updated);
+    }
+    if doc.sections.iter().any(|s| s.subsections.iter().any(|sub| sub.block == block_id)) {
+        return remove_subsection(doc, block_id).map(RemoveBlockResult::Updated);
+    }
+    None
+}
+
 /// Reorder top-level sections. Returns `None` if `order` does not contain
 /// exactly the same set of block UUIDs as the current sections.
 pub fn reorder_sections(mut doc: Document, order: Vec<Uuid>) -> Option<Document> {
@@ -237,5 +270,33 @@ mod tests {
         let doc = append_section(append_section(create(doc_id, root), s1), s2);
         // `sub` is not in sections
         assert!(reorder_sections(doc, vec![s1, sub]).is_none());
+    }
+
+    #[test]
+    fn remove_subsection_removes_it() {
+        let (root, s1, _, sub, doc_id) = ids();
+        let doc = append_section(create(doc_id, root), s1);
+        let doc = append_subsection(doc, s1, sub).unwrap();
+        let doc = remove_subsection(doc, sub).unwrap();
+        assert!(doc.sections[0].subsections.is_empty());
+    }
+
+    #[test]
+    fn remove_block_from_document_root_returns_delete() {
+        let (root, _, _, _, doc_id) = ids();
+        let doc = create(doc_id, root);
+        let result = remove_block_from_document(doc, root).unwrap();
+        assert!(matches!(result, RemoveBlockResult::DeleteDocument));
+    }
+
+    #[test]
+    fn remove_block_from_document_section_returns_updated() {
+        let (root, s1, _, _, doc_id) = ids();
+        let doc = append_section(create(doc_id, root), s1);
+        let result = remove_block_from_document(doc, s1).unwrap();
+        match &result {
+            RemoveBlockResult::Updated(d) => assert!(d.sections.is_empty()),
+            _ => panic!("expected Updated"),
+        }
     }
 }

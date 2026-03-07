@@ -126,6 +126,24 @@ fn invalid_heading_in_block_detected() {
 }
 
 #[test]
+fn invalid_reserved_in_name_detected() {
+    let dir = common::spec_dir().join("invalid").join("reserved-in-name");
+    let vault = common::load_vault(&dir);
+    let violations = validate_vault(&vault);
+
+    assert!(!violations.is_empty(), "should detect reserved character in name");
+    let v = violations
+        .iter()
+        .find(|v| matches!(v.details, ViolationDetails::NameContainsReservedCharacters { .. }))
+        .expect("should have a NameContainsReservedCharacters violation");
+    assert!(
+        v.description.contains("reserved"),
+        "description should mention reserved: {}",
+        v.description
+    );
+}
+
+#[test]
 fn invalid_missing_metadata_detected() {
     let dir = common::spec_dir().join("invalid").join("missing-frontmatter");
     let vault = common::load_vault(&dir);

@@ -75,6 +75,10 @@ impl DocumentStore for FsDocumentStore {
     fn get(&self, id: Uuid) -> Option<Document> {
         self.cache.get(&id).cloned()
     }
+
+    fn list_ids(&self) -> Vec<Uuid> {
+        self.cache.keys().cloned().collect()
+    }
 }
 
 #[cfg(test)]

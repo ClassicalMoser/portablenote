@@ -64,7 +64,7 @@ Interfaces that infrastructure adapters implement. Defined here so use cases can
 | `DocumentStore` | Read/write access to document definitions. `get`, `save`, `delete`. |
 | `NameIndex` | Human-readable name → UUID resolution. `resolve`, `set`, `remove`. |
 | `ManifestStore` | Read/write the vault manifest (checksum chain). `get`, `write`. The **save snapshot** boundary for reconstructible atomic commits. |
-| `MutationGate` | §5 mutation gate: `allow_mutation()` — adapter builds a full vault from its state, runs checksum check and (on mismatch) full validation; returns `Ok(())` or `RemediationRequired`. Keeps gate logic in the core (`gate::mutation_gate`) and avoids adding "list everything" to other ports. |
+| `MutationGate` | §5 mutation gate: `allow_mutation(expected_checksum)` — adapter builds a full vault from its state; optional OCC (expected_checksum must match manifest.checksum); then checksum drift check and (on mismatch) full validation; returns `Ok(())`, `StaleState`, or `RemediationRequired`. Keeps gate logic in the core (`gate::mutation_gate`) and avoids adding "list everything" to other ports. |
 | `Clock` | Source of current time (`now()`). Injected so domain and use cases stay testable; infra provides `SystemClock`. |
 
 All traits are annotated with `#[cfg_attr(test, mockall::automock)]` so that `MockBlockStore`, `MockGraphStore`, etc. are generated automatically for test builds.
@@ -194,3 +194,15 @@ The core is a library crate. It has no knowledge of transport, UI framework, or 
 - **CLI / other** — Any binary that depends on `portablenote-core` and wires up adapters.
 
 Tauri is one way to build a desktop client. It is not required by the spec and not the only option.
+
+---
+
+## Design Decisions
+
+### DeleteBlockCascade updates documents
+
+The two delete modes exist so the user can choose: **Safe** (fail if anything references the block) or **Cascade** (remove the block and clean up all references). When they choose cascade, they really want the block gone — so we remove it from documents too, not leave dangling section/subsection references.
+
+Cascade delete therefore:
+- Removes the block from every document that references it: if the block is a **section**, that section is removed; if it is a **subsection**, that subsection is removed; if the block is a document **root**, that document is deleted (it has no valid root).
+- Emits the corresponding `WriteDocument` / `DeleteDocument` writes so the vault stays consistent and validation does not flag dangling UUIDs.

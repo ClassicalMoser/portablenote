@@ -215,7 +215,7 @@ fn dispatch_delete_block(cmd: &ScenarioCommand, stores: &mut VaultStores) -> Com
             }
             Err(e) => CommandOutcome::Rejected { error: e.to_string() },
         },
-        "cascade" => match delete_block_cascade::execute(&stores.blocks, &stores.graph, &clock, block_id) {
+        "cascade" => match delete_block_cascade::execute(&stores.blocks, &stores.graph, &stores.documents, &clock, block_id) {
             Ok(result) => {
                 let event_fields = json_map(json!({
                     "block_id": result.event.block_id.to_string(),

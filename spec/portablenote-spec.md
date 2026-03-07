@@ -178,7 +178,7 @@ The filename is derived from the block's `name` metadata field using RFC 3986 pe
 
 All other characters — including spaces, unicode, and common punctuation — pass through unmodified. Unicode is normalized to NFC before encoding.
 
-The filename is a **derived projection** of the metadata `name`, not the source of truth. The metadata in the HTML comment header is always authoritative. If a filename does not match `encode(metadata.name) + extension`, the implementation corrects the filename on open.
+The filename is a **derived projection** of the metadata `name`, not the source of truth. The metadata in the HTML comment header is always authoritative. If a filename does not match `encode(metadata.name) + extension`, the implementation corrects the filename on the next write of that block (not on open). The checksum guards against external tampering: a filename mismatch without a corresponding metadata change triggers the mutation gate, preventing silent acceptance of externally modified files.
 
 #### Filename Length
 
@@ -384,7 +384,7 @@ Compliance: an implementation that permits a mutation when the gate would block 
 | `RenameBlock` | Change a block's `name`. Propagates to all inline refs and footer annotations vault-wide. | Block exists, new name unique vault-wide. |
 | `MutateBlockContent` | Update block content. Updates `modified` timestamp. | Block exists, content valid for declared format, no heading syntax outside fenced code. |
 | `DeleteBlockSafe` | Delete block. Fails if incoming reference edges exist. | No incoming edges in `block-graph.json`. |
-| `DeleteBlockCascade` | Delete block. Removes all incoming and outgoing edges. Reverts all inline `[[Name]]` references in other blocks to plain text. Removes corresponding footer annotations. Emits warning with counts. | Block exists. |
+| `DeleteBlockCascade` | Delete block. Removes all incoming and outgoing edges. Reverts all inline `[[Name]]` references in other blocks to plain text. Removes corresponding footer annotations. Removes the block from every document that references it: removes the section or subsection; if the block is a document root, deletes that document. Emits warning with counts. | Block exists. |
 
 #### Document Commands
 
@@ -536,7 +536,7 @@ These invariants must hold after every mutation. Conforming implementations enfo
 
 These rules are enforced when a vault is opened, not after every mutation. They concern on-disk representation rather than domain state.
 
-9. Every block filename matches `encode(metadata.name) + extension`. The metadata `name` is authoritative; mismatched filenames are corrected on open (not treated as a validation failure).
+9. Every block filename matches `encode(metadata.name) + extension`. The metadata `name` is authoritative; mismatched filenames are corrected on the next write of that block (not on open, and not treated as a validation failure).
 10. The manifest checksum reflects the current state of all source artifacts. Mismatch triggers the mutation gate — see §5 Mutation gate.
 
 ---

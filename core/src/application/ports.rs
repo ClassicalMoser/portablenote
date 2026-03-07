@@ -35,6 +35,8 @@ pub trait GraphStore {
 #[cfg_attr(test, mockall::automock)]
 pub trait DocumentStore {
     fn get(&self, id: Uuid) -> Option<Document>;
+    /// All document IDs (e.g. for cascade delete to find documents referencing a block).
+    fn list_ids(&self) -> Vec<Uuid>;
 }
 
 /// Read-only name → UUID index (vault-wide unique).
@@ -65,10 +67,20 @@ pub trait ManifestStore {
 /// for the gate. The adapter builds the vault from its own state and calls
 /// the core gate rule; the composition root calls this before permitting a
 /// mutation.
+///
+/// If `expected_checksum` is `Some(c)`, the gate allows only when
+/// `vault.manifest.checksum == c` (optimistic concurrency: client's read-state
+/// must match current manifest). The manifest's `previous_checksum` is the
+/// committed record of the prior state; clients typically send the `checksum`
+/// they last read, which becomes `previous_checksum` after the next commit.
 #[cfg_attr(test, mockall::automock)]
 pub trait MutationGate {
-    /// Returns `Ok(())` if mutation is allowed, `Err(RemediationRequired)` if not.
-    fn allow_mutation(&self) -> Result<(), crate::domain::error::DomainError>;
+    /// Returns `Ok(())` if mutation is allowed; `Err(StaleState)` when
+    /// `expected_checksum` is set and does not match; `Err(RemediationRequired)` when violated.
+    fn allow_mutation(
+        &self,
+        expected_checksum: Option<String>,
+    ) -> Result<(), crate::domain::error::DomainError>;
 }
 
 /// Injected port references for the composition root.

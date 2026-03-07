@@ -1,3 +1,4 @@
+use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 use crate::application::ports::{BlockStore, Clock, NameIndex};
@@ -10,6 +11,7 @@ use crate::domain::events::BlockRenamed;
 ///
 /// Multi-store: returns a `CommandResult` with `SaveBlock` writes for the renamed
 /// block and all propagated blocks, plus `RemoveName`/`SetName` index swaps.
+/// The new name is NFC-normalized before storage per spec §1.
 pub fn execute(
     block_store: &dyn BlockStore,
     names: &dyn NameIndex,
@@ -17,22 +19,24 @@ pub fn execute(
     block_id: Uuid,
     new_name: &str,
 ) -> Result<CommandResult<BlockRenamed>, DomainError> {
+    let new_name: String = new_name.nfc().collect();
+
     let block = block_store
         .get(block_id)
         .ok_or(DomainError::BlockNotFound(block_id))?;
 
-    if let Some((_, existing_id)) = names.resolve_ignore_case(new_name) {
+    if let Some((_, existing_id)) = names.resolve_ignore_case(&new_name) {
         if existing_id != block_id {
-            return Err(DomainError::NameConflict(new_name.to_string(), existing_id));
+            return Err(DomainError::NameConflict(new_name, existing_id));
         }
     }
 
     let old_name = block.name.clone();
     let now = clock.now();
-    let renamed = blocks::apply_rename(block, new_name, now)?;
+    let renamed = blocks::apply_rename(block, &new_name, now)?;
 
     let referencing = block_store.find_by_ref(&old_name);
-    let (propagated, refs_updated) = blocks::propagate_rename(referencing, &old_name, new_name, now);
+    let (propagated, refs_updated) = blocks::propagate_rename(referencing, &old_name, &new_name, now);
 
     let mut writes = Vec::new();
     writes.push(VaultWrite::WriteBlock(renamed.clone()));
@@ -40,14 +44,14 @@ pub fn execute(
         writes.push(VaultWrite::WriteBlock(b.clone()));
     }
     writes.push(VaultWrite::RemoveName(old_name.clone()));
-    writes.push(VaultWrite::SetName { name: new_name.to_string(), id: block_id });
+    writes.push(VaultWrite::SetName { name: new_name.clone(), id: block_id });
 
     Ok(CommandResult {
         writes,
         event: BlockRenamed {
             block_id,
             old_name,
-            new_name: new_name.to_string(),
+            new_name,
             refs_updated,
         },
     })
@@ -186,6 +190,33 @@ mod tests {
         let clock = mock_clock();
         let result = execute(&blocks, &names, &clock, id(), "Beta");
         assert!(matches!(result, Err(DomainError::NameConflict(_, _))));
+    }
+
+    #[test]
+    fn nfd_new_name_is_stored_as_nfc() {
+        let mut blocks = MockBlockStore::new();
+        let mut names = MockNameIndex::new();
+
+        let nfd_name = "cafe\u{0301}";
+        let nfc_name = "caf\u{00e9}";
+
+        blocks
+            .expect_get()
+            .with(eq(id()))
+            .return_once(move |_| Some(make_block(id(), "Alpha")));
+        names
+            .expect_resolve_ignore_case()
+            .return_once(|_| None);
+        blocks
+            .expect_find_by_ref()
+            .return_once(|_| vec![]);
+
+        let clock = mock_clock();
+        let result = execute(&blocks, &names, &clock, id(), nfd_name).unwrap();
+
+        assert_eq!(result.event.new_name, nfc_name);
+        assert!(matches!(&result.writes[0], VaultWrite::WriteBlock(b) if b.name == nfc_name));
+        assert!(matches!(&result.writes.last().unwrap(), VaultWrite::SetName { name, .. } if name == nfc_name));
     }
 
     #[test]

@@ -1,0 +1,8 @@
+{
+  "invariant": 7,
+  "description": "Block name contains reserved characters (brackets)",
+  "details": {
+    "block_id": "53000000-0000-4000-a000-000000000001",
+    "name": "My [Block]"
+  }
+}

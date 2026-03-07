@@ -104,6 +104,10 @@ impl DocumentStore for InMemoryDocumentStore {
     fn get(&self, id: Uuid) -> Option<Document> {
         self.docs.get(&id).cloned()
     }
+
+    fn list_ids(&self) -> Vec<Uuid> {
+        self.docs.keys().cloned().collect()
+    }
 }
 
 /// In-memory name-to-UUID index.
