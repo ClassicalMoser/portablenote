@@ -12,6 +12,7 @@ use std::path::Path;
 use serde_json::json;
 use uuid::Uuid;
 
+use portablenote_infra::SystemClock;
 use portablenote_core::application::use_cases::{
     add_block, add_document, add_edge, append_section, append_subsection, delete_block_cascade,
     delete_block_safe, delete_document, mutate_block_content, remove_edge, remove_section,
@@ -58,7 +59,21 @@ pub fn run_scenario(filename: &str) {
     let vault = crate::common::load_vault(&vault_path);
     let mut stores = factory::from_vault(&vault);
 
-    let outcome = dispatch(&scenario.command, &mut stores);
+    // Mutation gate (§5): checksum match → allow; mismatch → revalidate; violations → block
+    let gate_allows = if portablenote_core::domain::checksum::is_drifted(&vault) {
+        let violations = portablenote_core::domain::invariants::validate_vault(&vault);
+        violations.is_empty()
+    } else {
+        true
+    };
+
+    let outcome = if gate_allows {
+        dispatch(&scenario.command, &mut stores)
+    } else {
+        CommandOutcome::Rejected {
+            error: "Remediation required: checksum mismatch and validation reported violations".to_string(),
+        }
+    };
 
     if scenario.expected.result == "rejected" {
         let CommandOutcome::Rejected { error } = &outcome else {
@@ -141,8 +156,9 @@ fn dispatch_add_block(cmd: &ScenarioCommand, stores: &mut VaultStores) -> Comman
     let id = payload_uuid(cmd, "id");
     let name = payload_str(cmd, "name");
     let content = payload_str(cmd, "content");
+    let clock = SystemClock;
 
-    match add_block::execute(&stores.blocks, &stores.names, id, &name, &content) {
+    match add_block::execute(&stores.blocks, &stores.names, &clock, id, &name, &content) {
         Ok(result) => {
             let event_fields = json_map(json!({
                 "block_id": result.event.block_id.to_string(),
@@ -161,8 +177,9 @@ fn dispatch_add_block(cmd: &ScenarioCommand, stores: &mut VaultStores) -> Comman
 fn dispatch_rename_block(cmd: &ScenarioCommand, stores: &mut VaultStores) -> CommandOutcome {
     let block_id = payload_uuid(cmd, "block_id");
     let new_name = payload_str(cmd, "new_name");
+    let clock = SystemClock;
 
-    match rename_block::execute(&stores.blocks, &stores.names, block_id, &new_name) {
+    match rename_block::execute(&stores.blocks, &stores.names, &clock, block_id, &new_name) {
         Ok(result) => {
             let event_fields = json_map(json!({
                 "block_id": result.event.block_id.to_string(),
@@ -182,9 +199,10 @@ fn dispatch_rename_block(cmd: &ScenarioCommand, stores: &mut VaultStores) -> Com
 fn dispatch_delete_block(cmd: &ScenarioCommand, stores: &mut VaultStores) -> CommandOutcome {
     let block_id = payload_uuid(cmd, "block_id");
     let mode = payload_str(cmd, "mode");
+    let clock = SystemClock;
 
     match mode.as_str() {
-        "safe" => match delete_block_safe::execute(&stores.blocks, &stores.graph, block_id) {
+        "safe" => match delete_block_safe::execute(&stores.blocks, &stores.graph, &clock, block_id) {
             Ok(result) => {
                 let event_fields = json_map(json!({
                     "block_id": result.event.block_id.to_string(),
@@ -197,7 +215,7 @@ fn dispatch_delete_block(cmd: &ScenarioCommand, stores: &mut VaultStores) -> Com
             }
             Err(e) => CommandOutcome::Rejected { error: e.to_string() },
         },
-        "cascade" => match delete_block_cascade::execute(&stores.blocks, &stores.graph, block_id) {
+        "cascade" => match delete_block_cascade::execute(&stores.blocks, &stores.graph, &clock, block_id) {
             Ok(result) => {
                 let event_fields = json_map(json!({
                     "block_id": result.event.block_id.to_string(),
@@ -220,8 +238,9 @@ fn dispatch_mutate_block_content(
 ) -> CommandOutcome {
     let block_id = payload_uuid(cmd, "block_id");
     let content = payload_str(cmd, "content");
+    let clock = SystemClock;
 
-    match mutate_block_content::execute(&stores.blocks, block_id, &content) {
+    match mutate_block_content::execute(&stores.blocks, &clock, block_id, &content) {
         Ok(result) => {
             let event_fields = json_map(json!({
                 "block_id": result.event.block_id.to_string(),

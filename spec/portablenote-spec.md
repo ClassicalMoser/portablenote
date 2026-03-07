@@ -53,7 +53,7 @@ All source artifact paths in this spec are relative to `portablenote/` unless ot
 
 The `/blocks` directory and `block-graph.json` are the canonical knowledge base. The `/documents` directory is optional — a vault with no documents is complete and fully navigable via the graph. Rendered output trees are derived and rebuilt on any mutation. They are never edited directly.
 
-A conforming implementation validates all source artifacts on open and rejects or remediates inconsistencies. Rendered trees are not validated — they are regenerated.
+A conforming implementation enforces the mutation gate (§5) before permitting any mutation: checksum check, then full validation on mismatch; remediation is required when validation fails. Rendered trees are not validated — they are regenerated.
 
 ---
 
@@ -123,7 +123,7 @@ All conforming implementations must apply the following rules identically to pro
 
 These rules ensure that any conforming implementation — regardless of language or platform — produces identical checksums for the same logical vault state.
 
-The result is stored as `sha256:<hex>`. On open, the implementation recomputes and compares. If `.journal` is present, the mismatch triggers the recovery protocol (see §5a). Without a journal, mismatch triggers a validation pass and re-sign if the vault is consistent; mismatch without a journal is advisory, not blocking — the user retains full control.
+The result is stored as `sha256:<hex>`. If `.journal` is present on open, a checksum mismatch triggers the recovery protocol (see §5a). When no journal is present, checksum mismatch triggers the mutation gate (see §5 Mutation gate): the implementation runs full validation; if validation passes, mutation is permitted (and the manifest may be updated to reflect current state); if validation fails, remediation is required before any mutation.
 
 ---
 
@@ -211,6 +211,7 @@ The metadata is YAML inside an HTML comment. Content follows immediately after t
 ### Name Rules
 
 - Names are **vault-wide unique, case-insensitive**. No two blocks may share a name that differs only by capitalization. `Notes` and `notes` are a collision. This ensures filenames are unambiguous on all platforms (Linux, macOS, Windows).
+- Names **must not contain `[` or `]`**. These characters are reserved for inline reference syntax (`[[Name]]` and footer `[Name]: uuid:`). A conforming implementation rejects block creation or rename when the name contains either character.
 - On creation, `name` defaults to the first line of the block's content, truncated to 120 characters.
 - On collision, a numeric suffix is appended automatically: `Getting Started (2)`.
 - Name and content are **decoupled after creation.** Editing content never changes `name`. Renaming never changes content. The name is a stable linking handle, not a content mirror.
@@ -233,7 +234,7 @@ A block references another block by name using double-bracket syntax:
 See also [[Getting Started]] for more context.
 ```
 
-Inline references use the human-readable `name`, never the UUID. References are live — they resolve at read time against the current heap. When a block is renamed, all inline references to it are updated automatically by the system. When a referenced block is deleted, inline references are reverted to plain text (the `[[brackets]]` are removed, leaving only the name string).
+Inline references use the human-readable `name`, never the UUID. References are live — they resolve at read time against the current heap. When a block is renamed, all inline references to it are updated automatically by the system (every occurrence of the reference syntax in content is updated; the implementation does not distinguish code blocks or other literal context — content is treated as a single string for propagation). When a referenced block is deleted, inline references are reverted to plain text (the `[[brackets]]` are removed, leaving only the name string).
 
 ### Footer Annotations
 
@@ -360,6 +361,18 @@ A block with no edges in `block-graph.json` — no incoming and no outgoing refe
 ## 5. Mutation Standards
 
 All state changes are commands. Queries never mutate state. Validation occurs before commitment. Failed commands are rejected with a descriptive error. Successful commands produce a complete, ordered set of writes that are applied atomically via the commit protocol (see §5a). The checksum and `previous_checksum` in the manifest are updated as the final step of every commit.
+
+### Mutation gate (when mutations are permitted)
+
+Before applying any mutation, a conforming implementation must enforce the following gate. The gate is evaluated per request (e.g. per command); implementations may skip the checksum check when they have just completed a successful commit and no other process could have modified the vault (implementation-defined).
+
+1. **Checksums match.** Recompute the vault checksum using the algorithm in §1 and compare to `manifest.checksum`. If they match, there is no obstacle; the implementation may proceed to execute the command and apply its writes.
+
+2. **Checksums mismatch.** Run full validation: verify all domain invariants (§6) and load-time rules (§6) hold for the current vault state. If validation reports **no** violations, there is no obstacle; the implementation may proceed. The implementation should update `manifest.checksum` to reflect the current state (e.g. when committing this or a subsequent mutation) so the vault is no longer drifted. If validation reports **one or more** violations, the implementation **must not** apply any mutation. Remediation is required: either the spec is extended to define acceptable repair for the reported condition, or human input (or an implementation-defined repair tool) must resolve the violations before any mutation is permitted.
+
+3. **Remediation required.** When the gate blocks (validation failed after a checksum mismatch), the implementation must report the violation(s) and refuse the mutation until the vault state satisfies all invariants. The implementation may allow read-only access or a remediation workflow; it must not apply writes.
+
+Compliance: an implementation that permits a mutation when the gate would block (e.g. checksum mismatch and validation reports violations) is non-conforming. An implementation that blocks mutation when checksums match, or when checksums mismatch but validation passes, is also non-conforming.
 
 ### Commands
 
@@ -500,7 +513,7 @@ After successful recovery, the vault is in a fully consistent state and proceeds
 
 **If `.journal` is absent:**
 
-Compute checksum and compare to manifest. A mismatch without a journal indicates external file modification (git, manual edit, or another tool). This is advisory — see §1 Checksum Computation.
+Compute checksum and compare to manifest. A mismatch without a journal indicates drift (e.g. external modification). The mutation gate (§5) applies: run full validation; if it passes, mutation is permitted; if it fails, remediation is required.
 
 ---
 
@@ -524,7 +537,7 @@ These invariants must hold after every mutation. Conforming implementations enfo
 These rules are enforced when a vault is opened, not after every mutation. They concern on-disk representation rather than domain state.
 
 9. Every block filename matches `encode(metadata.name) + extension`. The metadata `name` is authoritative; mismatched filenames are corrected on open (not treated as a validation failure).
-10. The manifest checksum reflects the current state of all source artifacts. Mismatch triggers drift detection and triage — see §1 Checksum Computation.
+10. The manifest checksum reflects the current state of all source artifacts. Mismatch triggers the mutation gate — see §5 Mutation gate.
 
 ---
 

@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::application::ports::{BlockStore, NameIndex};
+use crate::application::ports::{BlockStore, Clock, NameIndex};
 use crate::application::results::{CommandResult, VaultWrite};
 use crate::domain::blocks;
 use crate::domain::error::DomainError;
@@ -13,6 +13,7 @@ use crate::domain::events::BlockRenamed;
 pub fn execute(
     block_store: &dyn BlockStore,
     names: &dyn NameIndex,
+    clock: &dyn Clock,
     block_id: Uuid,
     new_name: &str,
 ) -> Result<CommandResult<BlockRenamed>, DomainError> {
@@ -27,10 +28,11 @@ pub fn execute(
     }
 
     let old_name = block.name.clone();
-    let renamed = blocks::apply_rename(block, new_name)?;
+    let now = clock.now();
+    let renamed = blocks::apply_rename(block, new_name, now)?;
 
     let referencing = block_store.find_by_ref(&old_name);
-    let (propagated, refs_updated) = blocks::propagate_rename(referencing, &old_name, new_name);
+    let (propagated, refs_updated) = blocks::propagate_rename(referencing, &old_name, new_name, now);
 
     let mut writes = Vec::new();
     writes.push(VaultWrite::WriteBlock(renamed.clone()));
@@ -54,11 +56,17 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::{MockBlockStore, MockNameIndex};
+    use crate::application::ports::{MockBlockStore, MockClock, MockNameIndex};
     use crate::application::results::VaultWrite;
     use crate::domain::types::Block;
     use chrono::Utc;
     use mockall::predicate::eq;
+
+    fn mock_clock() -> MockClock {
+        let mut c = MockClock::new();
+        c.expect_now().returning(Utc::now);
+        c
+    }
 
     const ID: &str = "00000000-0000-4000-a000-000000000001";
     const OTHER: &str = "00000000-0000-4000-a000-000000000002";
@@ -97,7 +105,8 @@ mod tests {
             .with(eq("Alpha"))
             .return_once(|_| vec![]);
 
-        let result = execute(&blocks, &names, id(), "Beta").unwrap();
+        let clock = mock_clock();
+        let result = execute(&blocks, &names, &clock, id(), "Beta").unwrap();
 
         assert_eq!(result.event.old_name, "Alpha");
         assert_eq!(result.event.new_name, "Beta");
@@ -136,7 +145,8 @@ mod tests {
             .with(eq("Alpha"))
             .return_once(move |_| vec![referrer]);
 
-        let result = execute(&blocks, &names, id(), "Beta").unwrap();
+        let clock = mock_clock();
+        let result = execute(&blocks, &names, &clock, id(), "Beta").unwrap();
 
         // SaveBlock(renamed), SaveBlock(propagated), RemoveName, SetName
         assert_eq!(result.writes.len(), 4);
@@ -154,7 +164,8 @@ mod tests {
             .with(eq(id()))
             .return_once(|_| None);
 
-        let result = execute(&blocks, &names, id(), "Beta");
+        let clock = mock_clock();
+        let result = execute(&blocks, &names, &clock, id(), "Beta");
         assert!(matches!(result, Err(DomainError::BlockNotFound(_))));
     }
 
@@ -172,7 +183,8 @@ mod tests {
             .with(eq("Beta"))
             .return_once(move |_| Some(other()));
 
-        let result = execute(&blocks, &names, id(), "Beta");
+        let clock = mock_clock();
+        let result = execute(&blocks, &names, &clock, id(), "Beta");
         assert!(matches!(result, Err(DomainError::NameConflict(_, _))));
     }
 }

@@ -20,10 +20,14 @@ mod block_store;
 mod document_store;
 mod encoding;
 mod graph_store;
+mod manifest_store;
+mod mutation_gate;
 mod name_index;
 
 pub use block_store::FsBlockStore;
 pub use document_store::FsDocumentStore;
 pub use encoding::{decode_block_filename, encode_block_filename};
 pub use graph_store::FsGraphStore;
+pub use manifest_store::FsManifestStore;
+pub use mutation_gate::FsMutationGate;
 pub use name_index::FsNameIndex;

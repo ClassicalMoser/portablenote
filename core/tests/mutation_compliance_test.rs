@@ -20,6 +20,7 @@ macro_rules! compliance {
 
 // Block commands
 compliance!(add_block, "add-block.json");
+compliance!(add_block_drifted_vault, "add-block-drifted-vault.json");
 compliance!(add_block_duplicate_name, "add-block-duplicate-name.json");
 compliance!(rename_block, "rename-block.json");
 compliance!(mutate_block_content, "mutate-block-content.json");

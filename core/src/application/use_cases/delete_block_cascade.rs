@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::application::ports::{BlockStore, GraphStore};
+use crate::application::ports::{BlockStore, Clock, GraphStore};
 use crate::application::results::{CommandResult, VaultWrite};
 use crate::domain::blocks;
 use crate::domain::error::DomainError;
@@ -14,6 +14,7 @@ use crate::domain::events::BlockDeleted;
 pub fn execute(
     block_store: &dyn BlockStore,
     graph: &dyn GraphStore,
+    clock: &dyn Clock,
     block_id: Uuid,
 ) -> Result<CommandResult<BlockDeleted>, DomainError> {
     let block = block_store
@@ -22,7 +23,7 @@ pub fn execute(
 
     let referencing = block_store.find_by_ref(&block.name);
     let (reverted_blocks, inline_refs_reverted) =
-        blocks::revert_refs(referencing, &block.name, block_id);
+        blocks::revert_refs(referencing, &block.name, block_id, clock.now());
 
     let all_edges = graph.edges_for(block_id);
 
@@ -49,7 +50,7 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::{MockBlockStore, MockGraphStore};
+    use crate::application::ports::{MockBlockStore, MockClock, MockGraphStore};
     use crate::application::results::VaultWrite;
     use crate::domain::types::{Block, Edge};
     use chrono::Utc;
@@ -67,11 +68,17 @@ mod tests {
     fn make_block(id: Uuid, name: &str) -> Block {
         Block { id, name: name.to_string(), content: String::new(), created: Utc::now(), modified: Utc::now() }
     }
+    fn mock_clock() -> MockClock {
+        let mut c = MockClock::new();
+        c.expect_now().returning(Utc::now);
+        c
+    }
 
     #[test]
     fn removes_all_edges_including_incoming() {
         let mut blocks = MockBlockStore::new();
         let mut graph = MockGraphStore::new();
+        let clock = mock_clock();
 
         blocks.expect_get().with(eq(id())).return_once(move |_| Some(make_block(id(), "Alpha")));
         blocks.expect_find_by_ref().with(eq("Alpha")).return_once(|_| vec![]);
@@ -82,7 +89,7 @@ mod tests {
             ]
         });
 
-        let result = execute(&blocks, &graph, id()).unwrap();
+        let result = execute(&blocks, &graph, &clock, id()).unwrap();
 
         assert!(result.writes.iter().any(|w| matches!(w, VaultWrite::RemoveEdge(e) if *e == edge_in())));
         assert!(result.writes.iter().any(|w| matches!(w, VaultWrite::RemoveEdge(e) if *e == edge_out())));
@@ -98,7 +105,8 @@ mod tests {
         blocks.expect_find_by_ref().with(eq("Alpha")).return_once(|_| vec![]);
         graph.expect_edges_for().with(eq(id())).return_once(|_| vec![]);
 
-        let result = execute(&blocks, &graph, id()).unwrap();
+        let clock = mock_clock();
+        let result = execute(&blocks, &graph, &clock, id()).unwrap();
 
         assert!(result.writes.iter().any(|w| matches!(w, VaultWrite::DeleteBlock(bid) if *bid == id())));
         assert!(result.writes.iter().any(|w| matches!(w, VaultWrite::RemoveName(n) if n == "Alpha")));
@@ -121,7 +129,8 @@ mod tests {
         blocks.expect_find_by_ref().with(eq("Alpha")).return_once(move |_| vec![referrer]);
         graph.expect_edges_for().with(eq(id())).return_once(|_| vec![]);
 
-        let result = execute(&blocks, &graph, id()).unwrap();
+        let clock = mock_clock();
+        let result = execute(&blocks, &graph, &clock, id()).unwrap();
 
         assert!(result.writes.iter().any(|w| matches!(w, VaultWrite::WriteBlock(b) if b.content.contains("See Alpha here."))));
         assert_eq!(result.event.inline_refs_reverted, 1);
@@ -131,10 +140,11 @@ mod tests {
     fn block_not_found_returns_error() {
         let mut blocks = MockBlockStore::new();
         let graph = MockGraphStore::new();
+        let clock = mock_clock();
 
         blocks.expect_get().with(eq(id())).return_once(|_| None);
 
-        let result = execute(&blocks, &graph, id());
+        let result = execute(&blocks, &graph, &clock, id());
         assert!(matches!(result, Err(DomainError::BlockNotFound(_))));
     }
 }

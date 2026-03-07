@@ -4,6 +4,7 @@ mod support;
 use uuid::Uuid;
 
 use portablenote_core::application::ports::{BlockStore, GraphStore, NameIndex};
+use portablenote_infra::SystemClock;
 use portablenote_core::application::results::VaultWrite;
 use portablenote_core::application::use_cases::{
     add_block, add_edge, delete_block_safe, rename_block,
@@ -35,8 +36,9 @@ fn add_block_round_trip() {
     assert_eq!(stores.blocks.list().len(), 3);
     assert!(stores.names.resolve("New Block").is_none());
 
+    let clock = SystemClock;
     let result =
-        add_block::execute(&stores.blocks, &stores.names, new_id, "New Block", "hello world")
+        add_block::execute(&stores.blocks, &stores.names, &clock, new_id, "New Block", "hello world")
             .unwrap();
 
     // Block is in the first write
@@ -55,8 +57,9 @@ fn add_block_rejects_duplicate_name() {
     let stores = load_with_refs();
     let new_id = uuid("aaaaaaaa-0000-4000-a000-000000000002");
 
+    let clock = SystemClock;
     let result =
-        add_block::execute(&stores.blocks, &stores.names, new_id, "Core Concepts", "dup");
+        add_block::execute(&stores.blocks, &stores.names, &clock, new_id, "Core Concepts", "dup");
 
     assert!(matches!(result, Err(DomainError::NameConflict(_, _))));
 }
@@ -71,9 +74,11 @@ fn rename_block_propagates_refs() {
     let getting_started_id = uuid("20000000-0000-4000-a000-000000000002");
     let core_concepts_id = uuid("20000000-0000-4000-a000-000000000001");
 
+    let clock = SystemClock;
     let result = rename_block::execute(
         &stores.blocks,
         &stores.names,
+        &clock,
         getting_started_id,
         "Quick Start",
     )
@@ -117,7 +122,8 @@ fn delete_block_safe_rejects_with_incoming_edges() {
     let stores = load_with_refs();
     let getting_started_id = uuid("20000000-0000-4000-a000-000000000002");
 
-    let result = delete_block_safe::execute(&stores.blocks, &stores.graph, getting_started_id);
+    let clock = SystemClock;
+    let result = delete_block_safe::execute(&stores.blocks, &stores.graph, &clock, getting_started_id);
 
     assert!(
         matches!(result, Err(DomainError::HasIncomingEdges(_, 1))),
@@ -129,9 +135,10 @@ fn delete_block_safe_rejects_with_incoming_edges() {
 fn delete_block_safe_succeeds_for_source_only_block() {
     let mut stores = load_with_refs();
     let core_concepts_id = uuid("20000000-0000-4000-a000-000000000001");
+    let clock = SystemClock;
 
     let result =
-        delete_block_safe::execute(&stores.blocks, &stores.graph, core_concepts_id).unwrap();
+        delete_block_safe::execute(&stores.blocks, &stores.graph, &clock, core_concepts_id).unwrap();
 
     assert_eq!(result.event.block_id, core_concepts_id);
     let outgoing_count = result

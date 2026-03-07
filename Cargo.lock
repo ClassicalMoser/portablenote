@@ -1038,6 +1038,7 @@ dependencies = [
  "chrono",
  "jsonschema",
  "mockall",
+ "portablenote-infra",
  "serde",
  "serde_json",
  "sha2",

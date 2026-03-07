@@ -34,9 +34,9 @@ spec/
 
 A conforming implementation must:
 
-1. **Accept** every vault in `compliance/valid/` without errors.
-2. **Reject** every vault in `compliance/invalid/` with the error described in its `_expected_error.json`.
-3. **Produce the expected outcome** for every scenario in `compliance/mutations/`.
+1. **Accept** every vault in `compliance/valid/` without errors. Vaults in `valid/` may include drifted fixtures (e.g. `minimal-drifted`) where `manifest.checksum` is wrong but content satisfies all invariants; the implementation must allow mutation after the gate (checksum mismatch → revalidate → pass).
+2. **Reject** every vault in `compliance/invalid/` with the error described in its `_expected_error.json`. Invalid vaults fail full validation (§6); the implementation must not permit any mutation until remediation (§5 Mutation gate).
+3. **Produce the expected outcome** for every scenario in `compliance/mutations/`. Scenarios that use a drifted vault (e.g. `add-block-drifted-vault.json`) assert that the mutation gate permits the command when revalidation passes.
 
 Implementations run the compliance suite as part of CI. The spec repo does not contain engine or UI code — only documentation, schemas, and tests.
 

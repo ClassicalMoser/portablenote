@@ -1,19 +1,32 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use super::content;
 use super::error::DomainError;
 use super::types::Block;
 
+/// Reserved for inline reference syntax `[[Name]]` and footer `[Name]: uuid:`.
+fn name_has_reserved_characters(name: &str) -> bool {
+    name.contains('[') || name.contains(']')
+}
+
 /// Create a new block, enforcing the no-heading and non-empty-name invariants.
-pub fn create(id: Uuid, name: &str, content_str: &str) -> Result<Block, DomainError> {
+/// Time is passed in so the domain stays pure and testable.
+pub fn create(
+    id: Uuid,
+    name: &str,
+    content_str: &str,
+    now: DateTime<Utc>,
+) -> Result<Block, DomainError> {
     if name.is_empty() {
         return Err(DomainError::EmptyName);
+    }
+    if name_has_reserved_characters(name) {
+        return Err(DomainError::NameContainsReservedCharacters);
     }
     if content::find_heading_outside_fence(content_str).is_some() {
         return Err(DomainError::HeadingInContent);
     }
-    let now = Utc::now();
     Ok(Block {
         id,
         name: name.to_string(),
@@ -23,52 +36,69 @@ pub fn create(id: Uuid, name: &str, content_str: &str) -> Result<Block, DomainEr
     })
 }
 
-/// Apply a rename to a block, updating `modified`. Rejects empty names.
-pub fn apply_rename(mut block: Block, new_name: &str) -> Result<Block, DomainError> {
+/// Apply a rename to a block, updating `modified`. Rejects empty or invalid names.
+pub fn apply_rename(
+    mut block: Block,
+    new_name: &str,
+    now: DateTime<Utc>,
+) -> Result<Block, DomainError> {
     if new_name.is_empty() {
         return Err(DomainError::EmptyName);
     }
+    if name_has_reserved_characters(new_name) {
+        return Err(DomainError::NameContainsReservedCharacters);
+    }
     block.name = new_name.to_string();
-    block.modified = Utc::now();
+    block.modified = now;
     Ok(block)
 }
 
 /// Replace a block's content, enforcing the no-heading invariant.
-pub fn apply_content(mut block: Block, content_str: &str) -> Result<Block, DomainError> {
+pub fn apply_content(
+    mut block: Block,
+    content_str: &str,
+    now: DateTime<Utc>,
+) -> Result<Block, DomainError> {
     if content::find_heading_outside_fence(content_str).is_some() {
         return Err(DomainError::HeadingInContent);
     }
     block.content = content_str.to_string();
-    block.modified = Utc::now();
+    block.modified = now;
     Ok(block)
 }
 
 /// Propagate a rename through a set of referencing blocks.
-/// Returns `(updated_blocks, total_inline_refs_updated)`.
+/// Returns `(updated_blocks, total_inline_refs_updated)`. Time is passed in for `modified`.
 pub fn propagate_rename(
     blocks: Vec<Block>,
     old_name: &str,
     new_name: &str,
+    now: DateTime<Utc>,
 ) -> (Vec<Block>, usize) {
     let mut total = 0;
     let updated = blocks
         .into_iter()
-        .map(|mut b| {
-            let (new_content, count) = content::rename_reference(&b.content, old_name, new_name);
+        .map(|mut block| {
+            let (new_content, count) = content::rename_reference(&block.content, old_name, new_name);
             if count > 0 {
-                b.content = new_content;
-                b.modified = Utc::now();
+                block.content = new_content;
+                block.modified = now;
                 total += count;
             }
-            b
+            block
         })
         .collect();
     (updated, total)
 }
 
 /// Revert inline references to a deleted block back to plain text.
-/// Returns `(updated_blocks, total_inline_refs_reverted)`.
-pub fn revert_refs(blocks: Vec<Block>, name: &str, target_uuid: Uuid) -> (Vec<Block>, usize) {
+/// Returns `(updated_blocks, total_inline_refs_reverted)`. Time is passed in for `modified`.
+pub fn revert_refs(
+    blocks: Vec<Block>,
+    name: &str,
+    target_uuid: Uuid,
+    now: DateTime<Utc>,
+) -> (Vec<Block>, usize) {
     let mut total = 0;
     let updated = blocks
         .into_iter()
@@ -76,7 +106,7 @@ pub fn revert_refs(blocks: Vec<Block>, name: &str, target_uuid: Uuid) -> (Vec<Bl
             let (new_content, count) = content::revert_reference(&b.content, name, target_uuid);
             if count > 0 {
                 b.content = new_content;
-                b.modified = Utc::now();
+                b.modified = now;
                 total += count;
             }
             b
@@ -98,10 +128,13 @@ mod tests {
     fn other() -> Uuid {
         Uuid::parse_str(OTHER).unwrap()
     }
+    fn now() -> DateTime<Utc> {
+        Utc::now()
+    }
 
     #[test]
     fn create_happy_path() {
-        let block = create(id(), "Alpha", "Some content.").unwrap();
+        let block = create(id(), "Alpha", "Some content.", now()).unwrap();
         assert_eq!(block.id, id());
         assert_eq!(block.name, "Alpha");
         assert_eq!(block.content, "Some content.");
@@ -110,63 +143,88 @@ mod tests {
 
     #[test]
     fn create_empty_name_is_error() {
-        assert!(matches!(create(id(), "", "content"), Err(DomainError::EmptyName)));
+        assert!(matches!(create(id(), "", "content", now()), Err(DomainError::EmptyName)));
+    }
+
+    #[test]
+    fn create_name_with_bracket_is_error() {
+        assert!(matches!(
+            create(id(), "Block]Name", "content", now()),
+            Err(DomainError::NameContainsReservedCharacters)
+        ));
+        assert!(matches!(
+            create(id(), "Block[Name", "content", now()),
+            Err(DomainError::NameContainsReservedCharacters)
+        ));
     }
 
     #[test]
     fn create_heading_in_content_is_error() {
         assert!(matches!(
-            create(id(), "Alpha", "## Heading"),
+            create(id(), "Alpha", "## Heading", now()),
             Err(DomainError::HeadingInContent)
         ));
     }
 
     #[test]
     fn create_heading_inside_fence_is_ok() {
-        assert!(create(id(), "Alpha", "```\n## Not a heading\n```").is_ok());
+        assert!(create(id(), "Alpha", "```\n## Not a heading\n```", now()).is_ok());
     }
 
     #[test]
     fn apply_rename_updates_name_and_modified() {
-        let block = create(id(), "Alpha", "content").unwrap();
-        let renamed = apply_rename(block, "Beta").unwrap();
+        let block = create(id(), "Alpha", "content", now()).unwrap();
+        let renamed = apply_rename(block, "Beta", now()).unwrap();
         assert_eq!(renamed.name, "Beta");
     }
 
     #[test]
     fn apply_rename_empty_name_is_error() {
-        let block = create(id(), "Alpha", "content").unwrap();
-        assert!(matches!(apply_rename(block, ""), Err(DomainError::EmptyName)));
+        let block = create(id(), "Alpha", "content", now()).unwrap();
+        assert!(matches!(apply_rename(block, "", now()), Err(DomainError::EmptyName)));
+    }
+
+    #[test]
+    fn apply_rename_reserved_characters_is_error() {
+        let block = create(id(), "Alpha", "content", now()).unwrap();
+        assert!(matches!(
+            apply_rename(block.clone(), "New[Name", now()),
+            Err(DomainError::NameContainsReservedCharacters)
+        ));
+        assert!(matches!(
+            apply_rename(block, "New]Name", now()),
+            Err(DomainError::NameContainsReservedCharacters)
+        ));
     }
 
     #[test]
     fn apply_content_updates_content() {
-        let block = create(id(), "Alpha", "old").unwrap();
-        let updated = apply_content(block, "new content").unwrap();
+        let block = create(id(), "Alpha", "old", now()).unwrap();
+        let updated = apply_content(block, "new content", now()).unwrap();
         assert_eq!(updated.content, "new content");
     }
 
     #[test]
     fn apply_content_heading_is_error() {
-        let block = create(id(), "Alpha", "content").unwrap();
+        let block = create(id(), "Alpha", "content", now()).unwrap();
         assert!(matches!(
-            apply_content(block, "# Heading"),
+            apply_content(block, "# Heading", now()),
             Err(DomainError::HeadingInContent)
         ));
     }
 
     #[test]
     fn propagate_rename_updates_refs() {
-        let b1 = create(id(), "Referrer", "See [[Alpha]].\n\n<!-- refs -->\n[Alpha]: uuid:00000000-0000-4000-a000-000000000002\n").unwrap();
-        let (updated, count) = propagate_rename(vec![b1], "Alpha", "Beta");
+        let b1 = create(id(), "Referrer", "See [[Alpha]].\n\n<!-- refs -->\n[Alpha]: uuid:00000000-0000-4000-a000-000000000002\n", now()).unwrap();
+        let (updated, count) = propagate_rename(vec![b1], "Alpha", "Beta", now());
         assert_eq!(count, 1);
         assert!(updated[0].content.contains("[[Beta]]"));
     }
 
     #[test]
     fn propagate_rename_no_match_unchanged() {
-        let b = create(id(), "NoRef", "plain text").unwrap();
-        let (updated, count) = propagate_rename(vec![b], "Alpha", "Beta");
+        let b = create(id(), "NoRef", "plain text", now()).unwrap();
+        let (updated, count) = propagate_rename(vec![b], "Alpha", "Beta", now());
         assert_eq!(count, 0);
         assert_eq!(updated[0].content, "plain text");
     }
@@ -176,8 +234,8 @@ mod tests {
         let content = format!(
             "See [[Alpha]] here.\n\n<!-- refs -->\n[Alpha]: uuid:{OTHER}\n"
         );
-        let b = create(id(), "Referrer", &content).unwrap();
-        let (updated, count) = revert_refs(vec![b], "Alpha", other());
+        let b = create(id(), "Referrer", &content, now()).unwrap();
+        let (updated, count) = revert_refs(vec![b], "Alpha", other(), now());
         assert_eq!(count, 1);
         assert!(updated[0].content.contains("See Alpha here."));
         assert!(!updated[0].content.contains("[[Alpha]]"));
@@ -185,8 +243,8 @@ mod tests {
 
     #[test]
     fn revert_refs_no_match_unchanged() {
-        let b = create(id(), "NoRef", "plain text").unwrap();
-        let (updated, count) = revert_refs(vec![b], "Alpha", other());
+        let b = create(id(), "NoRef", "plain text", now()).unwrap();
+        let (updated, count) = revert_refs(vec![b], "Alpha", other(), now());
         assert_eq!(count, 0);
         assert_eq!(updated[0].content, "plain text");
     }

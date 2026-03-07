@@ -15,6 +15,11 @@ pub struct FsGraphStore {
 }
 
 impl FsGraphStore {
+    /// Full graph snapshot (for MutationGate implementation in this crate).
+    pub fn as_block_graph(&self) -> &BlockGraph {
+        &self.graph
+    }
+
     /// Load the block graph from `block-graph.json` at the given path.
     /// Creates an empty graph if the file does not exist.
     pub fn open(path: PathBuf) -> std::io::Result<Self> {

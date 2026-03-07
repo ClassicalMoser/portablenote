@@ -63,8 +63,29 @@ Interfaces that infrastructure adapters implement. Defined here so use cases can
 | `GraphStore` | Read/write access to the reference graph. `get_edge`, `incoming`, `edges_for`, `save_edge`, `remove_edges`. |
 | `DocumentStore` | Read/write access to document definitions. `get`, `save`, `delete`. |
 | `NameIndex` | Human-readable name → UUID resolution. `resolve`, `set`, `remove`. |
+| `ManifestStore` | Read/write the vault manifest (checksum chain). `get`, `write`. The **save snapshot** boundary for reconstructible atomic commits. |
 
 All traits are annotated with `#[cfg_attr(test, mockall::automock)]` so that `MockBlockStore`, `MockGraphStore`, etc. are generated automatically for test builds.
+
+### Commit protocol (§5a)
+
+The spec’s reconstructible atomic commit model is implemented by the **adapter**, not the use cases. Use cases return `CommandResult` (writes); the adapter is responsible for:
+
+1. **Journal** — Write `.journal` (expected_checksum, before_image, writes) before modifying any artifact.
+2. **Apply writes** — Apply `CommandResult.writes` in order.
+3. **Write manifest** — Set `checksum` to the new value and `previous_checksum` to the old; this is the commit point. Done via `ManifestStore::write`.
+4. **Delete journal** — Clean up.
+
+Recovery on open: if `.journal` exists, recompute actual checksum and follow the spec’s Case A/B/C (rewrite manifest, discard journal, or undo from before_image). `ManifestStore` is the port over which the snapshot (checksum chain) is read and written so this protocol stays inside the hexagon boundary.
+
+### Composition boundary (`VaultPorts` + `UseCases`)
+
+Dependencies are injected at a single boundary, analogous to `createUseCases({ databasePort, authPort, ... })` in a TS/Express bootstrap:
+
+- **`VaultPorts<'a>`** — Struct holding references to all five port traits (blocks, graph, documents, names, manifest). Built once at the composition root (CLI, server, WASM adapter, or test).
+- **`UseCases::new(ports)`** — Returns the use-case surface with ports injected. Call `use_cases.add_block(...)`, `use_cases.rename_block(...)`, etc. No use case receives more than one injected value; the adapter passes `&ports` (or a `UseCases` built from it).
+
+The composition root is the only place that wires concrete adapters into `VaultPorts` and constructs `UseCases`. Unit tests continue to call individual `use_cases::add_block::execute(&mock_blocks, &mock_names, ...)` with mocks; integration and E2E tests can build `VaultPorts` from real or in-memory stores and use `UseCases` for a single, mockable boundary.
 
 ### Result Types (`results`)
 
@@ -143,6 +164,22 @@ Integration tests load the compliance fixtures from `spec/compliance/` and run d
 - `queries_test` — runs query functions against loaded vault snapshots.
 
 Mutation scenarios in `spec/compliance/mutations/` are a known gap — not yet wired into automated integration tests.
+
+---
+
+## Open, validate, and full vault
+
+**Checksum-first validation (per request).** Operations stay atomic and idempotent: the gate is a checksum check, not “validate entire vault before any operation.” The adapter (or composition root) does the following before permitting a mutation: (1) **Checksums match** — computed checksum equals manifest’s `checksum` → no obstacle; proceed. (2) **Checksums mismatch** — run full `validate_vault(vault)`. If the result is OK (e.g. drift is benign or explained), no obstacle; proceed. (3) **Revalidation not OK** — remediation required: either enrich the spec to handle the case or require human input; do not proceed until resolved. The core provides `checksum::compute(vault)`, `checksum::is_drifted(vault)`, and `invariants::validate_vault(vault)`; the adapter owns policy. Requests that follow closely after a successful commit may skip the checksum check (state is known current), but implementations may choose to always check for consistency.
+
+**Full vault for validate and checksum.** Both validation and checksum need a full in-memory `Vault` (manifest, blocks, graph, documents, names). The core has `checksum::compute(vault)` and no I/O. So the adapter must be able to produce a `Vault` — either by reading through the five read ports and building the struct, or by a dedicated “load vault from path” path used at open and (if needed) after apply_writes to compute the new checksum for the manifest. Bootstrapping a new vault is the case where the vault is empty and validation passes trivially.
+
+**Composition root naming.** The object that holds open adapters and exposes the use-case surface is the composition root for one open vault. Do not call it a “session.” Session implies a continuous connection — something that is established, sustained, and later closed — and that assumption is wrong: the vault is a directory; there is no inherent connection or lifecycle. A process opens it (load, validate, wire adapters), runs commands, and may hold the handle for one command or many. Another process could open the same vault. Naming it a session encourages the wrong mental model (e.g. exclusive ownership, session-scoped state, or a link that must be kept alive). Use names that reflect a handle or context for an open vault, e.g. `VaultHandle` or `OpenVault`. The important invariant is “validate (and optionally drift-check) the loaded vault before allowing mutations.”
+
+---
+
+## Port failure and I/O errors
+
+Port traits currently return `Option<T>` or `Vec<T>`, not `Result<T, E>`. So when an adapter hits an I/O error (e.g. disk full, permission denied), it cannot propagate it; in practice adapters use `.expect()` and panic, or (e.g. on block parse) skip and log. The **intended policy** when a port “fails” is owned by the composition root: **rewind** (if journal and before_image exist), **retry**, or **panic**; user intervention (e.g. “fix disk and retry”) is also a valid outcome. If port methods are later extended to return `Result`, the domain still does not see I/O; the use case or the composition root would handle the error and decide rewind/retry/panic/user. This is deliberately underspecified in the core so adapters can choose their own durability and error-surfacing strategy.
 
 ---
 

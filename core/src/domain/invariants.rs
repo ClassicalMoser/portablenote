@@ -29,7 +29,7 @@ pub fn validate_vault(vault: &Vault) -> Vec<Violation> {
     violations
 }
 
-/// Every block must have a non-empty name.
+/// Every block must have a non-empty name and must not contain `[` or `]`.
 fn check_block_metadata(vault: &Vault, violations: &mut Vec<Violation>) {
     for block in vault.blocks.values() {
         if block.name.is_empty() {
@@ -38,6 +38,15 @@ fn check_block_metadata(vault: &Vault, violations: &mut Vec<Violation>) {
                 details: ViolationDetails::MissingMetadataField {
                     block_id: block.id,
                     missing_field: "name".to_string(),
+                },
+            });
+        }
+        if block.name.contains('[') || block.name.contains(']') {
+            violations.push(Violation {
+                description: "Block name contains reserved character '[' or ']'".to_string(),
+                details: ViolationDetails::NameContainsReservedCharacters {
+                    block_id: block.id,
+                    name: block.name.clone(),
                 },
             });
         }

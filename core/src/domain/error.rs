@@ -58,6 +58,8 @@ pub enum ViolationDetails {
         block_id: Uuid,
         missing_field: String,
     },
+    /// Block name contains `[` or `]`, reserved for reference syntax.
+    NameContainsReservedCharacters { block_id: Uuid, name: String },
 }
 
 /// Domain errors for command execution.
@@ -74,6 +76,9 @@ pub enum DomainError {
 
     #[error("Block name must not be empty")]
     EmptyName,
+
+    #[error("Block name must not contain '[' or ']' (reserved for reference syntax)")]
+    NameContainsReservedCharacters,
 
     #[error("Name '{0}' is already in use by block {1}")]
     NameConflict(String, Uuid),
@@ -101,4 +106,8 @@ pub enum DomainError {
 
     #[error("Section order must contain exactly the same block UUIDs as current sections")]
     InvalidSectionOrder,
+
+    /// Mutation gate (§5) blocked: checksum mismatch and validation reported violations.
+    #[error("Remediation required: checksum mismatch and {0} validation violation(s). Fix the vault before mutating.")]
+    RemediationRequired(usize),
 }

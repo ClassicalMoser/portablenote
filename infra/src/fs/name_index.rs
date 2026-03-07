@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use portablenote_core::application::ports::NameIndex;
 
-/// Filesystem adapter for `NameIndex`. Manages `name-index.json` as a
+/// Filesystem adapter for `NameIndex`. Manages `names.json` as a
 /// flat `{ "name": "uuid" }` map. The full index is held in memory;
 /// mutations flush the entire file on each write.
 pub struct FsNameIndex {
@@ -15,7 +15,7 @@ pub struct FsNameIndex {
 }
 
 impl FsNameIndex {
-    /// Load the name index from `name-index.json` at the given path.
+    /// Load the name index from `names.json` at the given path.
     /// Creates an empty index if the file does not exist.
     pub fn open(path: PathBuf) -> std::io::Result<Self> {
         let names = if path.exists() {
@@ -35,14 +35,19 @@ impl FsNameIndex {
         Ok(Self { path, names })
     }
 
+    /// Full name→UUID map (for MutationGate implementation in this crate).
+    pub fn all_names(&self) -> &HashMap<String, Uuid> {
+        &self.names
+    }
+
     pub fn set(&mut self, name: &str, id: Uuid) {
         self.names.insert(name.to_string(), id);
-        self.flush().expect("failed to write name-index.json");
+        self.flush().expect("failed to write names.json");
     }
 
     pub fn remove(&mut self, name: &str) {
         self.names.remove(name);
-        self.flush().expect("failed to write name-index.json");
+        self.flush().expect("failed to write names.json");
     }
 
     fn flush(&self) -> std::io::Result<()> {
@@ -67,7 +72,7 @@ mod tests {
 
     fn setup() -> (TempDir, PathBuf) {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("name-index.json");
+        let path = dir.path().join("names.json");
         (dir, path)
     }
 

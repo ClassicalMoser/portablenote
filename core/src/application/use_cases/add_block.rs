@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::application::ports::{BlockStore, NameIndex};
+use crate::application::ports::{BlockStore, Clock, NameIndex};
 use crate::application::results::{CommandResult, VaultWrite};
 use crate::domain::blocks;
 use crate::domain::error::DomainError;
@@ -12,6 +12,7 @@ use crate::domain::events::BlockAdded;
 pub fn execute(
     blocks: &dyn BlockStore,
     names: &dyn NameIndex,
+    clock: &dyn Clock,
     id: Uuid,
     name: &str,
     content: &str,
@@ -23,7 +24,7 @@ pub fn execute(
         return Err(DomainError::DuplicateId(id));
     }
 
-    let block = blocks::create(id, name, content)?;
+    let block = blocks::create(id, name, content, clock.now())?;
 
     Ok(CommandResult {
         writes: vec![
@@ -40,8 +41,9 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::{MockBlockStore, MockNameIndex};
+    use crate::application::ports::{MockBlockStore, MockClock, MockNameIndex};
     use crate::application::results::VaultWrite;
+    use chrono::Utc;
     use mockall::predicate::eq;
 
     const ID: &str = "00000000-0000-4000-a000-000000000001";
@@ -54,10 +56,17 @@ mod tests {
         Uuid::parse_str(OTHER).unwrap()
     }
 
+    fn mock_clock() -> MockClock {
+        let mut clock = MockClock::new();
+        clock.expect_now().returning(Utc::now);
+        clock
+    }
+
     #[test]
     fn happy_path_returns_writes_and_event() {
         let mut blocks = MockBlockStore::new();
         let mut names = MockNameIndex::new();
+        let clock = mock_clock();
 
         names
             .expect_resolve()
@@ -68,7 +77,7 @@ mod tests {
             .with(eq(id()))
             .return_once(|_| None);
 
-        let result = execute(&blocks, &names, id(), "Alpha", "content").unwrap();
+        let result = execute(&blocks, &names, &clock, id(), "Alpha", "content").unwrap();
 
         assert_eq!(result.event.block_id, id());
         assert_eq!(result.event.name, "Alpha");
@@ -87,7 +96,8 @@ mod tests {
             .with(eq("Alpha"))
             .return_once(move |_| Some(other()));
 
-        let result = execute(&blocks, &names, id(), "Alpha", "content");
+        let clock = mock_clock();
+        let result = execute(&blocks, &names, &clock, id(), "Alpha", "content");
         assert!(matches!(result, Err(DomainError::NameConflict(_, _))));
     }
 
@@ -113,7 +123,8 @@ mod tests {
             })
         });
 
-        let result = execute(&blocks, &names, id(), "Alpha", "content");
+        let clock = mock_clock();
+        let result = execute(&blocks, &names, &clock, id(), "Alpha", "content");
         assert!(matches!(result, Err(DomainError::DuplicateId(_))));
     }
 
@@ -131,7 +142,8 @@ mod tests {
             .with(eq(id()))
             .return_once(|_| None);
 
-        let result = execute(&blocks, &names, id(), "Alpha", "## Bad");
+        let clock = mock_clock();
+        let result = execute(&blocks, &names, &clock, id(), "Alpha", "## Bad");
         assert!(matches!(result, Err(DomainError::HeadingInContent)));
     }
 }

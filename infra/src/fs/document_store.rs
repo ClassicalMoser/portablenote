@@ -42,6 +42,11 @@ impl FsDocumentStore {
         Ok(Self { dir, cache })
     }
 
+    /// All documents (for MutationGate implementation in this crate).
+    pub fn all_documents(&self) -> &HashMap<Uuid, Document> {
+        &self.cache
+    }
+
     pub fn save(&mut self, doc: &Document) {
         self.cache.insert(doc.id, doc.clone());
         self.flush_one(doc).expect("failed to write document file");

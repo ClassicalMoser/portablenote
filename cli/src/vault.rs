@@ -1,22 +1,36 @@
+//! CLI composition root: real filesystem integration.
+//!
+//! This module is the only place that wires concrete adapters (`FsBlockStore`,
+//! `FsGraphStore`, etc.) into the hexagon. It builds `VaultPorts` from the
+//! session and runs use cases through `UseCases::new(ports)`; commands then
+//! apply the returned writes via `apply_writes`. Same DI pattern as a
+//! `createHexagonRoutes()` / `createUseCases({ databasePort, authPort })`
+//! bootstrap elsewhere.
+
 use std::io;
 use std::path::{Path, PathBuf};
 
 use uuid::Uuid;
 
-use portablenote_core::application::ports::BlockStore;
+use portablenote_core::application::ports::{BlockStore, MutationGate, VaultPorts};
+use portablenote_infra::SystemClock;
 use portablenote_core::application::results::VaultWrite;
-use portablenote_core::application::use_cases::{
-    add_block, add_edge, delete_block_cascade, delete_block_safe, mutate_block_content,
-    rename_block, remove_edge,
-};
+use portablenote_core::application::runner::UseCases;
 use portablenote_core::domain::error::DomainError;
-use portablenote_infra::fs::{FsBlockStore, FsDocumentStore, FsGraphStore, FsNameIndex};
+use portablenote_infra::fs::{
+    FsBlockStore, FsDocumentStore, FsGraphStore, FsManifestStore, FsMutationGate, FsNameIndex,
+};
 
+/// Open vault session: owns the real FS adapters and exposes the use-case
+/// surface via injected `VaultPorts`. Includes `ManifestStore` for the
+/// reconstructible atomic commit model (§5a).
 pub struct VaultSession {
     pub blocks: FsBlockStore,
     pub graph: FsGraphStore,
     pub documents: FsDocumentStore,
     pub names: FsNameIndex,
+    pub manifest: FsManifestStore,
+    clock: SystemClock,
 }
 
 impl VaultSession {
@@ -67,6 +81,8 @@ impl VaultSession {
             graph: FsGraphStore::open(pn.join("block-graph.json"))?,
             documents: FsDocumentStore::open(pn.join("documents"))?,
             names: FsNameIndex::open(pn.join("names.json"))?,
+            manifest: FsManifestStore::open(pn.join("manifest.json")),
+            clock: SystemClock,
         })
     }
 
@@ -109,16 +125,47 @@ impl VaultSession {
         }
     }
 
+    /// Injected ports for the use-case layer (composition root).
+    fn ports(&self) -> VaultPorts<'_> {
+        VaultPorts {
+            blocks: &self.blocks,
+            graph: &self.graph,
+            documents: &self.documents,
+            names: &self.names,
+            manifest: &self.manifest,
+            clock: &self.clock,
+        }
+    }
+
+    /// Use-case surface with ports injected. Borrows `self` for reads only.
+    fn use_cases(&self) -> UseCases<'_> {
+        UseCases::new(self.ports())
+    }
+
+    /// Mutation gate (§5): run before every mutating command.
+    fn require_gate(&self) -> Result<(), DomainError> {
+        let gate = FsMutationGate {
+            blocks: &self.blocks,
+            graph: &self.graph,
+            documents: &self.documents,
+            names: &self.names,
+            manifest: &self.manifest,
+        };
+        gate.allow_mutation()
+    }
+
     pub fn add_block(&mut self, name: &str, content: &str) -> Result<(), DomainError> {
+        self.require_gate()?;
         let id = Uuid::new_v4();
-        let result = add_block::execute(&self.blocks, &self.names, id, name, content)?;
+        let result = self.use_cases().add_block(id, name, content)?;
         println!("added block: {} ({})", result.event.name, result.event.block_id);
         self.apply_writes(result.writes);
         Ok(())
     }
 
     pub fn rename_block(&mut self, block_id: Uuid, new_name: &str) -> Result<(), DomainError> {
-        let result = rename_block::execute(&self.blocks, &self.names, block_id, new_name)?;
+        self.require_gate()?;
+        let result = self.use_cases().rename_block(block_id, new_name)?;
         println!(
             "renamed block {} → {} ({} refs updated)",
             result.event.old_name, result.event.new_name, result.event.refs_updated
@@ -128,22 +175,24 @@ impl VaultSession {
     }
 
     pub fn mutate_content(&mut self, block_id: Uuid, content: &str) -> Result<(), DomainError> {
-        let result = mutate_block_content::execute(&self.blocks, block_id, content)?;
+        self.require_gate()?;
+        let result = self.use_cases().mutate_block_content(block_id, content)?;
         self.apply_writes(result.writes);
         println!("updated content for block {block_id}");
         Ok(())
     }
 
     pub fn delete_block(&mut self, block_id: Uuid, cascade: bool) -> Result<(), DomainError> {
+        self.require_gate()?;
         if cascade {
-            let result = delete_block_cascade::execute(&self.blocks, &self.graph, block_id)?;
+            let result = self.use_cases().delete_block_cascade(block_id)?;
             println!(
                 "deleted block {} (cascade: {} edges removed, {} refs reverted)",
                 block_id, result.event.edges_removed, result.event.inline_refs_reverted
             );
             self.apply_writes(result.writes);
         } else {
-            let result = delete_block_safe::execute(&self.blocks, &self.graph, block_id)?;
+            let result = self.use_cases().delete_block_safe(block_id)?;
             println!("deleted block {block_id}");
             self.apply_writes(result.writes);
         }
@@ -151,15 +200,17 @@ impl VaultSession {
     }
 
     pub fn add_edge(&mut self, source: Uuid, target: Uuid) -> Result<(), DomainError> {
+        self.require_gate()?;
         let id = Uuid::new_v4();
-        let result = add_edge::execute(&self.blocks, &self.graph, id, source, target)?;
+        let result = self.use_cases().add_edge(id, source, target)?;
         println!("added edge {}: {} → {}", result.event.edge_id, result.event.source, result.event.target);
         self.apply_writes(result.writes);
         Ok(())
     }
 
     pub fn remove_edge(&mut self, edge_id: Uuid) -> Result<(), DomainError> {
-        let result = remove_edge::execute(&self.graph, edge_id)?;
+        self.require_gate()?;
+        let result = self.use_cases().remove_edge(edge_id)?;
         println!("removed edge {edge_id}");
         self.apply_writes(result.writes);
         Ok(())
