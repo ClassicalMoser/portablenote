@@ -12,14 +12,18 @@ use std::path::{Path, PathBuf};
 
 use uuid::Uuid;
 
-use portablenote_core::application::ports::{BlockStore, MutationGate, VaultPorts};
-use portablenote_infra::SystemClock;
+use portablenote_core::application::commit;
+use portablenote_core::application::journal::{self, Journal};
+use portablenote_core::application::ports::{BlockStore, ManifestStore, MutationGate, VaultPorts};
 use portablenote_core::application::results::VaultWrite;
 use portablenote_core::application::runner::UseCases;
+use portablenote_core::domain::checksum;
 use portablenote_core::domain::error::DomainError;
 use portablenote_infra::fs::{
-    FsBlockStore, FsDocumentStore, FsGraphStore, FsManifestStore, FsMutationGate, FsNameIndex,
+    FsBlockStore, FsDocumentStore, FsGraphStore, FsJournalStore, FsManifestStore, FsMutationGate,
+    FsNameIndex,
 };
+use portablenote_infra::SystemClock;
 
 /// Open vault session: owns the real FS adapters and exposes the use-case
 /// surface via injected `VaultPorts`. Includes `ManifestStore` for the
@@ -30,6 +34,7 @@ pub struct VaultSession {
     pub documents: FsDocumentStore,
     pub names: FsNameIndex,
     pub manifest: FsManifestStore,
+    journal: FsJournalStore,
     clock: SystemClock,
 }
 
@@ -76,14 +81,19 @@ impl VaultSession {
             ));
         }
 
-        Ok(Self {
+        let mut session = Self {
             blocks: FsBlockStore::open(pn.join("blocks"))?,
             graph: FsGraphStore::open(pn.join("block-graph.json"))?,
             documents: FsDocumentStore::open(pn.join("documents"))?,
             names: FsNameIndex::open(pn.join("names.json"))?,
             manifest: FsManifestStore::open(pn.join("manifest.json")),
+            journal: FsJournalStore::open(&pn),
             clock: SystemClock,
-        })
+        };
+        if session.journal.exists() {
+            session.run_recovery()?;
+        }
+        Ok(session)
     }
 
     /// Resolve vault path: use the provided path or search upward from cwd.
@@ -105,23 +115,78 @@ impl VaultSession {
         }
     }
 
-    /// Apply an ordered list of `VaultWrite` entries to the concrete adapters.
-    ///
-    /// This is the boundary at which the pure domain result becomes an
-    /// impure filesystem operation. A future enhancement can make this
-    /// atomic (stage → rename) to avoid partial writes.
+    /// Apply an ordered list of `VaultWrite` entries to the concrete adapters,
+    /// then update the manifest (checksum chain) per §5a.
     pub fn apply_writes(&mut self, writes: Vec<VaultWrite>) {
+        self.apply_writes_only(&writes);
+        self.commit_manifest();
+    }
+
+    /// Apply writes without updating the manifest (used for recovery Case C undo).
+    fn apply_writes_only(&mut self, writes: &[VaultWrite]) {
         for write in writes {
             match write {
-                VaultWrite::WriteBlock(block) => self.blocks.save(&block),
-                VaultWrite::DeleteBlock(id) => self.blocks.delete(id),
-                VaultWrite::WriteEdge(edge) => self.graph.save_edge(&edge),
-                VaultWrite::RemoveEdge(id) => self.graph.remove_edge(id),
-                VaultWrite::WriteDocument(doc) => self.documents.save(&doc),
-                VaultWrite::DeleteDocument(id) => self.documents.delete(id),
-                VaultWrite::SetName { name, id } => self.names.set(&name, id),
-                VaultWrite::RemoveName(name) => self.names.remove(&name),
+                VaultWrite::WriteBlock(block) => self.blocks.save(block),
+                VaultWrite::DeleteBlock(id) => self.blocks.delete(*id),
+                VaultWrite::WriteEdge(edge) => self.graph.save_edge(edge),
+                VaultWrite::RemoveEdge(id) => self.graph.remove_edge(*id),
+                VaultWrite::WriteDocument(doc) => self.documents.save(doc),
+                VaultWrite::DeleteDocument(id) => self.documents.delete(*id),
+                VaultWrite::SetName { name, id } => self.names.set(name, *id),
+                VaultWrite::RemoveName(name) => self.names.remove(name),
             }
+        }
+    }
+
+    /// Run recovery when `.journal` is present (§5a). Call once on open.
+    fn run_recovery(&mut self) -> io::Result<()> {
+        let journal: Journal = self
+            .journal
+            .read()?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "journal exists but could not be read"))?;
+        let gate = FsMutationGate {
+            blocks: &self.blocks,
+            graph: &self.graph,
+            documents: &self.documents,
+            names: &self.names,
+            manifest: &self.manifest,
+        };
+        let vault = gate
+            .build_vault()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no manifest for recovery"))?;
+        let actual = checksum::compute(&vault);
+        let manifest_checksum = vault.manifest.checksum.clone();
+        match journal::recovery_case(&actual, &journal, &manifest_checksum) {
+            journal::RecoveryCase::A => {
+                let mut m = vault.manifest;
+                m.previous_checksum = Some(m.checksum.clone());
+                m.checksum = journal.expected_checksum.clone();
+                self.manifest.write(&m);
+                self.journal.delete()?;
+            }
+            journal::RecoveryCase::B => {
+                self.journal.delete()?;
+            }
+            journal::RecoveryCase::C => {
+                let undo = journal::undo_writes_from_journal(&journal);
+                self.apply_writes_only(&undo);
+                self.journal.delete()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Persist manifest with current checksum (commit point §5a).
+    fn commit_manifest(&self) {
+        let gate = FsMutationGate {
+            blocks: &self.blocks,
+            graph: &self.graph,
+            documents: &self.documents,
+            names: &self.names,
+            manifest: &self.manifest,
+        };
+        if let Some(vault) = gate.build_vault() {
+            commit::write_manifest_after_writes(&vault, &self.manifest);
         }
     }
 
@@ -154,12 +219,31 @@ impl VaultSession {
         gate.allow_mutation()
     }
 
+    /// §5a: write journal, apply writes (and commit manifest), delete journal.
+    fn commit_with_journal(&mut self, writes: Vec<VaultWrite>) -> io::Result<()> {
+        let gate = FsMutationGate {
+            blocks: &self.blocks,
+            graph: &self.graph,
+            documents: &self.documents,
+            names: &self.names,
+            manifest: &self.manifest,
+        };
+        let vault = gate
+            .build_vault()
+            .expect("gate allowed mutation so vault exists");
+        let j = journal::build_journal(&vault, &writes);
+        self.journal.write(&j)?;
+        self.apply_writes(writes);
+        self.journal.delete()
+    }
+
     pub fn add_block(&mut self, name: &str, content: &str) -> Result<(), DomainError> {
         self.require_gate()?;
         let id = Uuid::new_v4();
         let result = self.use_cases().add_block(id, name, content)?;
         println!("added block: {} ({})", result.event.name, result.event.block_id);
-        self.apply_writes(result.writes);
+        self.commit_with_journal(result.writes)
+            .map_err(|e| DomainError::Io(e.to_string()))?;
         Ok(())
     }
 
@@ -170,32 +254,36 @@ impl VaultSession {
             "renamed block {} → {} ({} refs updated)",
             result.event.old_name, result.event.new_name, result.event.refs_updated
         );
-        self.apply_writes(result.writes);
+        self.commit_with_journal(result.writes)
+            .map_err(|e| DomainError::Io(e.to_string()))?;
         Ok(())
     }
 
     pub fn mutate_content(&mut self, block_id: Uuid, content: &str) -> Result<(), DomainError> {
         self.require_gate()?;
         let result = self.use_cases().mutate_block_content(block_id, content)?;
-        self.apply_writes(result.writes);
+        self.commit_with_journal(result.writes)
+            .map_err(|e| DomainError::Io(e.to_string()))?;
         println!("updated content for block {block_id}");
         Ok(())
     }
 
     pub fn delete_block(&mut self, block_id: Uuid, cascade: bool) -> Result<(), DomainError> {
         self.require_gate()?;
-        if cascade {
+        let writes = if cascade {
             let result = self.use_cases().delete_block_cascade(block_id)?;
             println!(
                 "deleted block {} (cascade: {} edges removed, {} refs reverted)",
                 block_id, result.event.edges_removed, result.event.inline_refs_reverted
             );
-            self.apply_writes(result.writes);
+            result.writes
         } else {
             let result = self.use_cases().delete_block_safe(block_id)?;
             println!("deleted block {block_id}");
-            self.apply_writes(result.writes);
-        }
+            result.writes
+        };
+        self.commit_with_journal(writes)
+            .map_err(|e| DomainError::Io(e.to_string()))?;
         Ok(())
     }
 
@@ -204,7 +292,8 @@ impl VaultSession {
         let id = Uuid::new_v4();
         let result = self.use_cases().add_edge(id, source, target)?;
         println!("added edge {}: {} → {}", result.event.edge_id, result.event.source, result.event.target);
-        self.apply_writes(result.writes);
+        self.commit_with_journal(result.writes)
+            .map_err(|e| DomainError::Io(e.to_string()))?;
         Ok(())
     }
 
@@ -212,7 +301,8 @@ impl VaultSession {
         self.require_gate()?;
         let result = self.use_cases().remove_edge(edge_id)?;
         println!("removed edge {edge_id}");
-        self.apply_writes(result.writes);
+        self.commit_with_journal(result.writes)
+            .map_err(|e| DomainError::Io(e.to_string()))?;
         Ok(())
     }
 

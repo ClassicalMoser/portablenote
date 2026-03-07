@@ -87,7 +87,7 @@ mod tests {
             manifest: Manifest {
                 vault_id: Uuid::nil(),
                 spec_version: "0.1.0".to_string(),
-                format: "portablenote".to_string(),
+                format: "markdown".to_string(),
                 checksum: String::new(),
                 previous_checksum: None,
             },
@@ -119,7 +119,7 @@ mod tests {
             manifest: Manifest {
                 vault_id: Uuid::nil(),
                 spec_version: "0.1.0".to_string(),
-                format: "portablenote".to_string(),
+                format: "markdown".to_string(),
                 checksum: String::new(),
                 previous_checksum: None,
             },

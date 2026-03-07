@@ -14,7 +14,7 @@ core/src/
   application/   Port traits, use cases, result types. Orchestrates domain + ports.
 ```
 
-Adapters (persistence, format parsing, rendering, search) live *outside* this crate, in separate crates or binaries that depend on `portablenote-core`. The core never imports adapter code.
+Adapters (persistence, rendering, search) live *outside* this crate, in separate crates or binaries that depend on `portablenote-core`. The core never imports adapter code. Markdown is the native format: block file parsing and serialization (`.md` ↔ `Block`) live in the domain layer (`domain/format`, `domain/content`).
 
 ### Control flow
 
@@ -64,6 +64,8 @@ Interfaces that infrastructure adapters implement. Defined here so use cases can
 | `DocumentStore` | Read/write access to document definitions. `get`, `save`, `delete`. |
 | `NameIndex` | Human-readable name → UUID resolution. `resolve`, `set`, `remove`. |
 | `ManifestStore` | Read/write the vault manifest (checksum chain). `get`, `write`. The **save snapshot** boundary for reconstructible atomic commits. |
+| `MutationGate` | §5 mutation gate: `allow_mutation()` — adapter builds a full vault from its state, runs checksum check and (on mismatch) full validation; returns `Ok(())` or `RemediationRequired`. Keeps gate logic in the core (`gate::mutation_gate`) and avoids adding "list everything" to other ports. |
+| `Clock` | Source of current time (`now()`). Injected so domain and use cases stay testable; infra provides `SystemClock`. |
 
 All traits are annotated with `#[cfg_attr(test, mockall::automock)]` so that `MockBlockStore`, `MockGraphStore`, etc. are generated automatically for test builds.
 

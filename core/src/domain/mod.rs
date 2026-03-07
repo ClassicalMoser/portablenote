@@ -5,7 +5,7 @@
 //! - **`types`** — Core value objects and entities (`Block`, `Edge`, `Document`, etc.)
 //! - **`blocks`**, **`edges`**, **`documents`** — Factory and mutation functions per aggregate
 //! - **`content`** — Markdown content analysis (heading detection, inline ref extraction/renaming)
-//! - **`format`** — Block file parsing and serialization (`.md` ↔ `Block`)
+//! - **`format`** — Markdown block file parsing and serialization (`.md` ↔ `Block`). The system is markdown-native.
 //! - **`commands`** / **`events`** — Command and event envelopes for CQRS-style dispatch
 //! - **`error`** — Domain error types and invariant violations
 //! - **`invariants`** — Full vault validation against spec rules

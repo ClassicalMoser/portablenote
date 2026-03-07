@@ -110,4 +110,8 @@ pub enum DomainError {
     /// Mutation gate (§5) blocked: checksum mismatch and validation reported violations.
     #[error("Remediation required: checksum mismatch and {0} validation violation(s). Fix the vault before mutating.")]
     RemediationRequired(usize),
+
+    /// I/O or persistence error (e.g. journal write/delete, manifest write).
+    #[error("I/O error: {0}")]
+    Io(String),
 }

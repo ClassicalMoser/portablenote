@@ -20,11 +20,10 @@ pub struct FsMutationGate<'a> {
     pub manifest: &'a FsManifestStore,
 }
 
-impl MutationGate for FsMutationGate<'_> {
-    fn allow_mutation(&self) -> Result<(), DomainError> {
-        let Some(manifest) = self.manifest.get() else {
-            return Ok(());
-        };
+impl FsMutationGate<'_> {
+    /// Build a full vault snapshot from current store state (for commit or gate).
+    pub fn build_vault(&self) -> Option<Vault> {
+        let manifest = self.manifest.get()?;
         let blocks: HashMap<_, _> = self
             .blocks
             .list()
@@ -34,13 +33,21 @@ impl MutationGate for FsMutationGate<'_> {
         let graph = self.graph.as_block_graph().clone();
         let documents = self.documents.all_documents().clone();
         let names = self.names.all_names().clone();
-        let vault = Vault {
+        Some(Vault {
             manifest,
             blocks,
             graph,
             documents,
             names,
             version: 0,
+        })
+    }
+}
+
+impl MutationGate for FsMutationGate<'_> {
+    fn allow_mutation(&self) -> Result<(), DomainError> {
+        let Some(vault) = self.build_vault() else {
+            return Ok(());
         };
         gate::mutation_gate(&vault)
     }

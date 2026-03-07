@@ -25,7 +25,7 @@ The spec is the contract. The tool is a proof of concept.
 - **Explicit over derived.** The graph is a first-class artifact, not rebuilt by scanning.
 - **Validation at every mutation.** Invariants hold after every transaction, not eventually.
 - **Git is version control.** Content history is delegated to git or equivalent. Format versioning is handled by the manifest.
-- **Markdown is an adapter.** Not the foundation. The first and most important adapter, but one of many.
+- **Markdown is the native format.** The system runs on markdown. Block content and documents are markdown; export to other formats (e.g. RTF, DOCX) may be supported as a separate concern.
 
 ---
 
@@ -79,7 +79,7 @@ Declares vault identity, spec version, content format, and integrity checksum.
 |---|---|---|
 | `vault_id` | UUID v4 | Permanent vault identity. Never changes. |
 | `spec_version` | semver string | PortableNote spec version this vault conforms to. |
-| `format` | string | Content format for all blocks in this vault. `"markdown"` for v0. Extensible. |
+| `format` | string | Content format for all blocks. Always `"markdown"`; the system is markdown-native. |
 | `checksum` | string | SHA-256 over canonical serialization of blocks, edges, and documents. Prefixed `sha256:`. |
 | `previous_checksum` | string \| null | Checksum of the vault state before the most recent commit. `null` for the genesis commit (vault init). Together with `checksum`, forms a hash chain: each commit is a verifiable `(before, after)` state transition. Two manifests sharing a `previous_checksum` but differing on `checksum` indicate a fork. |
 
@@ -592,22 +592,22 @@ Existing metadata fields not recognized by the spec are preserved in the block's
 
 ---
 
-## 9. Content Format Adapter
+## 9. Markdown Block Format (Domain)
 
-The content format adapter is a port. The Markdown adapter is the v0 reference implementation. Future adapters (RTF, HTML, Portable Text) implement the same behavioral contract.
+The system is markdown-native. Block content is markdown; parsing and serialization of block files (metadata header + markdown body) belong in the domain. Rendered documents are markdown trees. Export to other formats (e.g. RTF, HTML, DOCX) is optional and lives outside the core contract — the canonical source is always markdown.
 
-### Required Capabilities
+### Required Capabilities (Markdown)
 
-A conforming content format adapter must provide:
+A conforming implementation must provide:
 
-- **Parse** — Read a block file and extract structured content (metadata, body, footer annotations).
-- **Serialize** — Write structured content back to a block file in the declared format.
-- **Validate** — Check a raw content string against the format's rules (e.g. no headings outside fenced code for Markdown).
+- **Parse** — Read a block `.md` file and extract structured content (metadata comment, body, footer annotations).
+- **Serialize** — Write a block back to the canonical markdown block file format.
+- **Validate** — Check a raw content string against markdown rules (e.g. no headings outside fenced code).
 - **Extract inline references** — Return all inline block reference names (`[[Name]]`) from a content string.
 
-### Format Declaration
+### Manifest Format Field
 
-Format is declared once per vault in the manifest. All blocks in a vault use the same format. Format migration between vaults requires re-serialization through the adapter. Mixing formats within a vault is not permitted in v0.
+The manifest declares `"format": "markdown"`. All blocks in a vault are markdown. Mixing content formats within a vault is not permitted.
 
 ---
 

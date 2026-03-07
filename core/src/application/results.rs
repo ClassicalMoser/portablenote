@@ -14,7 +14,7 @@ use crate::domain::types::{Block, Document, Edge};
 /// atomically. The order is significant: writes must be applied in sequence to
 /// maintain referential consistency (e.g. save reverted blocks before deleting
 /// the block they referenced).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum VaultWrite {
     WriteBlock(Block),
     DeleteBlock(Uuid),

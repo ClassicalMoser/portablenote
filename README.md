@@ -40,7 +40,7 @@ The `pn` command-line tool for local vault management. Supports `init`, `add`, `
 - **The graph is the knowledge.** Typed, directed edges between blocks capture relationships explicitly. The graph is a first-class artifact, not rebuilt by scanning.
 - **Documents are views.** An ordered composition of blocks from the heap. The same block may appear in many documents. Rearranging documents never affects the graph.
 - **Links are live.** Inline references use human-readable names. A rename propagates everywhere automatically.
-- **Multiple export formats.** Source content is Markdown. Rendered output can target `.md`, `.rtf`, `.docx`, and others.
+- **Markdown-native.** Block content and documents are markdown. Export to other formats (e.g. `.rtf`, `.docx`) may be supported separately.
 
 ## Status
 

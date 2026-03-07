@@ -1,3 +1,9 @@
+//! Markdown block file format.
+//!
+//! The system is markdown-native. Block content is markdown; this module implements
+//! parsing and serialization of the canonical markdown block file format (metadata
+//! comment + body). Export to other formats lives outside the domain.
+
 use std::collections::HashMap;
 
 use chrono::{DateTime, SecondsFormat, Utc};

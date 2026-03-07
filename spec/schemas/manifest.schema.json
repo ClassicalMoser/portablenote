@@ -18,7 +18,7 @@
     },
     "format": {
       "type": "string",
-      "description": "Content format for all blocks in this vault. 'markdown' for v0.",
+      "description": "Content format for all blocks. Always 'markdown'; the system is markdown-native.",
       "enum": ["markdown"]
     },
     "checksum": {
