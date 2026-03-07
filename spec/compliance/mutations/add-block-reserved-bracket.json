@@ -1,0 +1,16 @@
+{
+  "description": "AddBlock: rejected when name contains reserved characters [ or ]",
+  "initial_vault": "../valid/minimal",
+  "command": {
+    "type": "AddBlock",
+    "payload": {
+      "id": "10000000-0000-4000-a000-000000000099",
+      "name": "My [Block]",
+      "content": "Content."
+    }
+  },
+  "expected": {
+    "result": "rejected",
+    "error": "reserved"
+  }
+}

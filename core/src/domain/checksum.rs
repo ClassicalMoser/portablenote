@@ -1,7 +1,12 @@
 use sha2::{Digest, Sha256};
+use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 use super::types::Vault;
+
+fn normalize_str(s: &str) -> String {
+    s.replace("\r\n", "\n").nfc().collect()
+}
 
 /// Compute the canonical SHA256 checksum of a vault's source artifacts.
 ///
@@ -16,6 +21,9 @@ use super::types::Vault;
 ///      significant for compositions — not sorted):
 ///      `section:<block_uuid>\n`, then for each subsection `sub:<block_uuid>\n`
 ///
+/// All string fields are NFC-normalized and line endings are normalized to LF
+/// before hashing, per spec §1 Normalization Rules.
+///
 /// The result is `sha256:<hex>`.
 ///
 /// Note: `names.json` is deliberately excluded — it is derived from block
@@ -28,7 +36,9 @@ pub fn compute(vault: &Vault) -> String {
 
     for id in block_ids {
         let block = &vault.blocks[id];
-        hasher.update(format!("block:{}\n{}\n{}\n", id, block.name, block.content).as_bytes());
+        let name = normalize_str(&block.name);
+        let content = normalize_str(&block.content);
+        hasher.update(format!("block:{}\n{}\n{}\n", id, name, content).as_bytes());
     }
 
     let mut edges = vault.graph.edges.clone();
@@ -240,6 +250,76 @@ mod tests {
         );
 
         assert_ne!(compute(&v1), compute(&v2));
+    }
+
+    #[test]
+    fn crlf_and_lf_content_produce_same_checksum() {
+        let id = Uuid::parse_str("00000000-0000-4000-a000-000000000001").unwrap();
+
+        let mut v_lf = empty_vault();
+        v_lf.blocks
+            .insert(id, make_block(id, "A", "line1\nline2\n"));
+
+        let mut v_crlf = empty_vault();
+        v_crlf
+            .blocks
+            .insert(id, make_block(id, "A", "line1\r\nline2\r\n"));
+
+        assert_eq!(
+            compute(&v_lf),
+            compute(&v_crlf),
+            "CRLF content must produce the same checksum as LF content"
+        );
+    }
+
+    #[test]
+    fn nfc_and_nfd_name_produce_same_checksum() {
+        let id = Uuid::parse_str("00000000-0000-4000-a000-000000000001").unwrap();
+
+        // NFC: é = U+00E9 (single code point)
+        let nfc_name = "caf\u{00E9}";
+        // NFD: e + combining acute = U+0065 U+0301
+        let nfd_name = "cafe\u{0301}";
+
+        let mut v_nfc = empty_vault();
+        v_nfc
+            .blocks
+            .insert(id, make_block(id, nfc_name, "content"));
+
+        let mut v_nfd = empty_vault();
+        v_nfd
+            .blocks
+            .insert(id, make_block(id, nfd_name, "content"));
+
+        assert_eq!(
+            compute(&v_nfc),
+            compute(&v_nfd),
+            "NFD name must produce the same checksum as NFC name"
+        );
+    }
+
+    #[test]
+    fn nfc_and_nfd_content_produce_same_checksum() {
+        let id = Uuid::parse_str("00000000-0000-4000-a000-000000000001").unwrap();
+
+        let nfc_content = "caf\u{00E9} latt\u{00E9}";
+        let nfd_content = "cafe\u{0301} latte\u{0301}";
+
+        let mut v_nfc = empty_vault();
+        v_nfc
+            .blocks
+            .insert(id, make_block(id, "A", nfc_content));
+
+        let mut v_nfd = empty_vault();
+        v_nfd
+            .blocks
+            .insert(id, make_block(id, "A", nfd_content));
+
+        assert_eq!(
+            compute(&v_nfc),
+            compute(&v_nfd),
+            "NFD content must produce the same checksum as NFC content"
+        );
     }
 
     #[test]

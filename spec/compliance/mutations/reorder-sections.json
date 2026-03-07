@@ -3,7 +3,6 @@
   "initial_vault": "../valid/with-documents",
   "command": {
     "type": "ReorderSections",
-    "base_version": 1,
     "payload": {
       "document_id": "d0000000-0000-4000-a000-000000000001",
       "section_order": [
@@ -15,9 +14,23 @@
   "expected": {
     "result": "success",
     "assertions": [
-      { "type": "document_section_at", "document_id": "d0000000-0000-4000-a000-000000000001", "index": 0, "block_id": "30000000-0000-4000-a000-000000000003" },
-      { "type": "document_section_at", "document_id": "d0000000-0000-4000-a000-000000000001", "index": 1, "block_id": "30000000-0000-4000-a000-000000000002" },
-      { "type": "event_emitted", "event": "SectionsReordered", "document_id": "d0000000-0000-4000-a000-000000000001" }
+      {
+        "type": "document_section_at",
+        "document_id": "d0000000-0000-4000-a000-000000000001",
+        "index": 0,
+        "block_id": "30000000-0000-4000-a000-000000000003"
+      },
+      {
+        "type": "document_section_at",
+        "document_id": "d0000000-0000-4000-a000-000000000001",
+        "index": 1,
+        "block_id": "30000000-0000-4000-a000-000000000002"
+      },
+      {
+        "type": "event_emitted",
+        "event": "SectionsReordered",
+        "document_id": "d0000000-0000-4000-a000-000000000001"
+      }
     ]
   }
 }

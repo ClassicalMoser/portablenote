@@ -21,9 +21,9 @@ pub fn execute(
         .get(block_id)
         .ok_or(DomainError::BlockNotFound(block_id))?;
 
-    if let Some(existing) = names.resolve(new_name) {
-        if existing != block_id {
-            return Err(DomainError::NameConflict(new_name.to_string(), existing));
+    if let Some((_, existing_id)) = names.resolve_ignore_case(new_name) {
+        if existing_id != block_id {
+            return Err(DomainError::NameConflict(new_name.to_string(), existing_id));
         }
     }
 
@@ -97,7 +97,7 @@ mod tests {
             .with(eq(id()))
             .return_once(move |_| Some(make_block(id(), "Alpha")));
         names
-            .expect_resolve()
+            .expect_resolve_ignore_case()
             .with(eq("Beta"))
             .return_once(|_| None);
         blocks
@@ -137,7 +137,7 @@ mod tests {
             .with(eq(id()))
             .return_once(move |_| Some(make_block(id(), "Alpha")));
         names
-            .expect_resolve()
+            .expect_resolve_ignore_case()
             .with(eq("Beta"))
             .return_once(|_| None);
         blocks
@@ -179,12 +179,31 @@ mod tests {
             .with(eq(id()))
             .return_once(move |_| Some(make_block(id(), "Alpha")));
         names
-            .expect_resolve()
+            .expect_resolve_ignore_case()
             .with(eq("Beta"))
-            .return_once(move |_| Some(other()));
+            .return_once(move |_| Some(("Beta".to_string(), other())));
 
         let clock = mock_clock();
         let result = execute(&blocks, &names, &clock, id(), "Beta");
+        assert!(matches!(result, Err(DomainError::NameConflict(_, _))));
+    }
+
+    #[test]
+    fn name_conflict_case_insensitive_returns_error() {
+        let mut blocks = MockBlockStore::new();
+        let mut names = MockNameIndex::new();
+
+        blocks
+            .expect_get()
+            .with(eq(id()))
+            .return_once(move |_| Some(make_block(id(), "Core Concepts")));
+        names
+            .expect_resolve_ignore_case()
+            .with(eq("welcome"))
+            .return_once(move |_| Some(("Welcome".to_string(), other())));
+
+        let clock = mock_clock();
+        let result = execute(&blocks, &names, &clock, id(), "welcome");
         assert!(matches!(result, Err(DomainError::NameConflict(_, _))));
     }
 }

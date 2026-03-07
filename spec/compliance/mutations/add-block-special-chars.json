@@ -1,12 +1,12 @@
 {
-  "description": "AddBlock: create a new block in a minimal vault",
+  "description": "AddBlock: success with name containing special characters (encoding round-trip)",
   "initial_vault": "../valid/minimal",
   "command": {
     "type": "AddBlock",
     "payload": {
       "id": "10000000-0000-4000-a000-000000000099",
-      "name": "New Block",
-      "content": "Fresh content for a new block."
+      "name": "Notes: Part 1",
+      "content": "Content with special name."
     }
   },
   "expected": {
@@ -17,18 +17,13 @@
         "block_id": "10000000-0000-4000-a000-000000000099"
       },
       {
-        "type": "name_index_contains",
-        "name": "New Block",
-        "block_id": "10000000-0000-4000-a000-000000000099"
+        "type": "block_name_is",
+        "block_id": "10000000-0000-4000-a000-000000000099",
+        "name": "Notes: Part 1"
       },
       {
         "type": "block_count",
         "count": 2
-      },
-      {
-        "type": "event_emitted",
-        "event": "BlockAdded",
-        "block_id": "10000000-0000-4000-a000-000000000099"
       }
     ]
   }

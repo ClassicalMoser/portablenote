@@ -1,0 +1,16 @@
+{
+  "description": "AddBlock: rejected when name differs only by case from existing block",
+  "initial_vault": "../valid/minimal",
+  "command": {
+    "type": "AddBlock",
+    "payload": {
+      "id": "10000000-0000-4000-a000-000000000099",
+      "name": "welcome",
+      "content": "Trying to use same name as Welcome."
+    }
+  },
+  "expected": {
+    "result": "rejected",
+    "error": "Name"
+  }
+}

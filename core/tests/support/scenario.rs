@@ -20,9 +20,6 @@ pub struct ScenarioCommand {
     /// Command type name, e.g. "AddBlock", "DeleteBlock".
     #[serde(rename = "type")]
     pub kind: String,
-    /// Application-layer field — parsed but ignored by the harness.
-    #[allow(dead_code)]
-    pub base_version: u64,
     /// Payload varies per command; kept as raw JSON for per-command extraction.
     pub payload: serde_json::Value,
 }

@@ -3,7 +3,6 @@
   "initial_vault": "../valid/minimal",
   "command": {
     "type": "AddBlock",
-    "base_version": 1,
     "payload": {
       "id": "10000000-0000-4000-a000-000000000099",
       "name": "Welcome",

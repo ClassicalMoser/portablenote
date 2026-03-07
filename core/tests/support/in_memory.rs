@@ -125,6 +125,14 @@ impl NameIndex for InMemoryNameIndex {
     fn resolve(&self, name: &str) -> Option<Uuid> {
         self.names.get(name).copied()
     }
+
+    fn resolve_ignore_case(&self, name: &str) -> Option<(String, Uuid)> {
+        let key = name.to_lowercase();
+        self.names
+            .iter()
+            .find(|(k, _)| k.to_lowercase() == key)
+            .map(|(k, v)| (k.clone(), *v))
+    }
 }
 
 /// Convenience bundle of all four stores for a single vault.

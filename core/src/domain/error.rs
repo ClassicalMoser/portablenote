@@ -107,6 +107,9 @@ pub enum DomainError {
     #[error("Section order must contain exactly the same block UUIDs as current sections")]
     InvalidSectionOrder,
 
+    #[error("Block {0} is already in the document (root or a section/subsection)")]
+    BlockAlreadyInDocument(Uuid),
+
     /// Mutation gate (§5) blocked: checksum mismatch and validation reported violations.
     #[error("Remediation required: checksum mismatch and {0} validation violation(s). Fix the vault before mutating.")]
     RemediationRequired(usize),

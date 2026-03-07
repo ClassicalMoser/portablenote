@@ -6,7 +6,6 @@ use uuid::Uuid;
 /// Create a new block with the given name and content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddBlock {
-    pub base_version: u64,
     pub id: Uuid,
     pub name: String,
     pub content: String,
@@ -16,7 +15,6 @@ pub struct AddBlock {
 /// across all referencing blocks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenameBlock {
-    pub base_version: u64,
     pub block_id: Uuid,
     pub new_name: String,
 }
@@ -24,7 +22,6 @@ pub struct RenameBlock {
 /// Replace a block's content body.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MutateBlockContent {
-    pub base_version: u64,
     pub block_id: Uuid,
     pub content: String,
 }
@@ -32,14 +29,12 @@ pub struct MutateBlockContent {
 /// Delete a block, rejected if incoming edges exist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteBlockSafe {
-    pub base_version: u64,
     pub block_id: Uuid,
 }
 
 /// Delete a block unconditionally, removing all edges (incoming + outgoing).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteBlockCascade {
-    pub base_version: u64,
     pub block_id: Uuid,
 }
 
@@ -48,7 +43,6 @@ pub struct DeleteBlockCascade {
 /// Create a new document rooted at the given block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddDocument {
-    pub base_version: u64,
     pub id: Uuid,
     pub root: Uuid,
 }
@@ -56,7 +50,6 @@ pub struct AddDocument {
 /// Append a block as a top-level section (depth 2) in a document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppendSection {
-    pub base_version: u64,
     pub document_id: Uuid,
     pub block_id: Uuid,
 }
@@ -64,7 +57,6 @@ pub struct AppendSection {
 /// Append a block as a subsection (depth 3) under an existing section.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppendSubsection {
-    pub base_version: u64,
     pub document_id: Uuid,
     pub section_block_id: Uuid,
     pub block_id: Uuid,
@@ -73,7 +65,6 @@ pub struct AppendSubsection {
 /// Remove a top-level section from a document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveSection {
-    pub base_version: u64,
     pub document_id: Uuid,
     pub block_id: Uuid,
 }
@@ -81,7 +72,6 @@ pub struct RemoveSection {
 /// Reorder the top-level sections in a document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReorderSections {
-    pub base_version: u64,
     pub document_id: Uuid,
     pub section_order: Vec<Uuid>,
 }
@@ -89,7 +79,6 @@ pub struct ReorderSections {
 /// Delete a document definition. Does not affect blocks or the graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteDocument {
-    pub base_version: u64,
     pub document_id: Uuid,
 }
 
@@ -98,7 +87,6 @@ pub struct DeleteDocument {
 /// Create a directed edge between two blocks in the reference graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddEdge {
-    pub base_version: u64,
     pub id: Uuid,
     pub source: Uuid,
     pub target: Uuid,
@@ -107,7 +95,6 @@ pub struct AddEdge {
 /// Remove an edge from the reference graph.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveEdge {
-    pub base_version: u64,
     pub edge_id: Uuid,
 }
 

@@ -3,7 +3,6 @@
   "initial_vault": "../valid/with-refs",
   "command": {
     "type": "AddDocument",
-    "base_version": 1,
     "payload": {
       "id": "d0000000-0000-4000-a000-000000000010",
       "root": "20000000-0000-4000-a000-000000000001"
@@ -12,9 +11,20 @@
   "expected": {
     "result": "success",
     "assertions": [
-      { "type": "document_exists", "document_id": "d0000000-0000-4000-a000-000000000010" },
-      { "type": "document_root_is", "document_id": "d0000000-0000-4000-a000-000000000010", "root": "20000000-0000-4000-a000-000000000001" },
-      { "type": "event_emitted", "event": "DocumentAdded", "document_id": "d0000000-0000-4000-a000-000000000010" }
+      {
+        "type": "document_exists",
+        "document_id": "d0000000-0000-4000-a000-000000000010"
+      },
+      {
+        "type": "document_root_is",
+        "document_id": "d0000000-0000-4000-a000-000000000010",
+        "root": "20000000-0000-4000-a000-000000000001"
+      },
+      {
+        "type": "event_emitted",
+        "event": "DocumentAdded",
+        "document_id": "d0000000-0000-4000-a000-000000000010"
+      }
     ]
   }
 }

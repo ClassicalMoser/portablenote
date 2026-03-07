@@ -3,7 +3,6 @@
   "initial_vault": "../valid/minimal",
   "command": {
     "type": "MutateBlockContent",
-    "base_version": 1,
     "payload": {
       "block_id": "10000000-0000-4000-a000-000000000001",
       "content": "Updated content for the Welcome block."
@@ -12,9 +11,21 @@
   "expected": {
     "result": "success",
     "assertions": [
-      { "type": "block_content_is", "block_id": "10000000-0000-4000-a000-000000000001", "content": "Updated content for the Welcome block." },
-      { "type": "block_modified_after", "block_id": "10000000-0000-4000-a000-000000000001", "after": "2026-03-01T00:00:00Z" },
-      { "type": "event_emitted", "event": "BlockContentMutated", "block_id": "10000000-0000-4000-a000-000000000001" }
+      {
+        "type": "block_content_is",
+        "block_id": "10000000-0000-4000-a000-000000000001",
+        "content": "Updated content for the Welcome block."
+      },
+      {
+        "type": "block_modified_after",
+        "block_id": "10000000-0000-4000-a000-000000000001",
+        "after": "2026-03-01T00:00:00Z"
+      },
+      {
+        "type": "event_emitted",
+        "event": "BlockContentMutated",
+        "block_id": "10000000-0000-4000-a000-000000000001"
+      }
     ]
   }
 }

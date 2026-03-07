@@ -1,0 +1,15 @@
+{
+  "description": "RenameBlock: rejected when new name contains reserved characters [ or ]",
+  "initial_vault": "../valid/minimal",
+  "command": {
+    "type": "RenameBlock",
+    "payload": {
+      "block_id": "10000000-0000-4000-a000-000000000001",
+      "new_name": "Notes [1]"
+    }
+  },
+  "expected": {
+    "result": "rejected",
+    "error": "reserved"
+  }
+}

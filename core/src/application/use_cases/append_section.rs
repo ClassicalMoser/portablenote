@@ -5,6 +5,24 @@ use crate::application::results::{CommandResult, VaultWrite};
 use crate::domain::documents;
 use crate::domain::error::DomainError;
 use crate::domain::events::SectionAppended;
+use crate::domain::types::Document;
+
+fn block_already_in_document(doc: &Document, block_id: Uuid) -> bool {
+    if doc.root == block_id {
+        return true;
+    }
+    for section in &doc.sections {
+        if section.block == block_id {
+            return true;
+        }
+        for sub in &section.subsections {
+            if sub.block == block_id {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 /// Append a block as a top-level section (depth 2) in a document.
 ///
@@ -20,6 +38,9 @@ pub fn execute(
         .ok_or(DomainError::DocumentNotFound(document_id))?;
     if block_store.get(block_id).is_none() {
         return Err(DomainError::BlockNotFound(block_id));
+    }
+    if block_already_in_document(&doc, block_id) {
+        return Err(DomainError::BlockAlreadyInDocument(block_id));
     }
 
     let updated = documents::append_section(doc, block_id);
@@ -87,5 +108,17 @@ mod tests {
 
         let result = execute(&blocks, &docs, doc_id(), block_id());
         assert!(matches!(result, Err(DomainError::BlockNotFound(_))));
+    }
+
+    #[test]
+    fn block_already_root_returns_error() {
+        let mut blocks = MockBlockStore::new();
+        let mut docs = MockDocumentStore::new();
+
+        docs.expect_get().with(eq(doc_id())).return_once(|_| Some(make_doc()));
+        blocks.expect_get().with(eq(root())).return_once(move |_| Some(make_block(root())));
+
+        let result = execute(&blocks, &docs, doc_id(), root());
+        assert!(matches!(result, Err(DomainError::BlockAlreadyInDocument(_))));
     }
 }

@@ -3,7 +3,6 @@
   "initial_vault": "../valid/with-refs",
   "command": {
     "type": "DeleteBlock",
-    "base_version": 1,
     "payload": {
       "block_id": "20000000-0000-4000-a000-000000000002",
       "mode": "safe"

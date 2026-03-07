@@ -3,7 +3,6 @@
   "initial_vault": "../valid/minimal",
   "command": {
     "type": "MutateBlockContent",
-    "base_version": 1,
     "payload": {
       "block_id": "10000000-0000-4000-a000-000000000001",
       "content": "Some text.\n\n## Illegal Heading\n\nMore text."

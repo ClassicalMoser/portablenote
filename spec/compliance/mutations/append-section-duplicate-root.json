@@ -1,11 +1,11 @@
 {
-  "description": "AppendSection: rejected when block is already in document (e.g. as subsection)",
+  "description": "AppendSection: rejected when block is already the document root",
   "initial_vault": "../valid/with-documents",
   "command": {
     "type": "AppendSection",
     "payload": {
       "document_id": "d0000000-0000-4000-a000-000000000001",
-      "block_id": "30000000-0000-4000-a000-000000000004"
+      "block_id": "30000000-0000-4000-a000-000000000001"
     }
   },
   "expected": {

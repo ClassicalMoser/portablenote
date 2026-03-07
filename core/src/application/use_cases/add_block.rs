@@ -17,8 +17,10 @@ pub fn execute(
     name: &str,
     content: &str,
 ) -> Result<CommandResult<BlockAdded>, DomainError> {
-    if let Some(existing) = names.resolve(name) {
-        return Err(DomainError::NameConflict(name.to_string(), existing));
+    if let Some((_, existing_id)) = names.resolve_ignore_case(name) {
+        if existing_id != id {
+            return Err(DomainError::NameConflict(name.to_string(), existing_id));
+        }
     }
     if blocks.get(id).is_some() {
         return Err(DomainError::DuplicateId(id));
@@ -69,7 +71,7 @@ mod tests {
         let clock = mock_clock();
 
         names
-            .expect_resolve()
+            .expect_resolve_ignore_case()
             .with(eq("Alpha"))
             .return_once(|_| None);
         blocks
@@ -92,12 +94,27 @@ mod tests {
         let mut names = MockNameIndex::new();
 
         names
-            .expect_resolve()
+            .expect_resolve_ignore_case()
             .with(eq("Alpha"))
-            .return_once(move |_| Some(other()));
+            .return_once(move |_| Some(("Alpha".to_string(), other())));
 
         let clock = mock_clock();
         let result = execute(&blocks, &names, &clock, id(), "Alpha", "content");
+        assert!(matches!(result, Err(DomainError::NameConflict(_, _))));
+    }
+
+    #[test]
+    fn name_conflict_case_insensitive_returns_error() {
+        let blocks = MockBlockStore::new();
+        let mut names = MockNameIndex::new();
+
+        names
+            .expect_resolve_ignore_case()
+            .with(eq("welcome"))
+            .return_once(move |_| Some(("Welcome".to_string(), other())));
+
+        let clock = mock_clock();
+        let result = execute(&blocks, &names, &clock, id(), "welcome", "content");
         assert!(matches!(result, Err(DomainError::NameConflict(_, _))));
     }
 
@@ -110,7 +127,7 @@ mod tests {
         let mut names = MockNameIndex::new();
 
         names
-            .expect_resolve()
+            .expect_resolve_ignore_case()
             .with(eq("Alpha"))
             .return_once(|_| None);
         blocks.expect_get().return_once(|_| {
@@ -134,7 +151,7 @@ mod tests {
         let mut names = MockNameIndex::new();
 
         names
-            .expect_resolve()
+            .expect_resolve_ignore_case()
             .with(eq("Alpha"))
             .return_once(|_| None);
         blocks

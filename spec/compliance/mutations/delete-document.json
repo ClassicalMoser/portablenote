@@ -3,7 +3,6 @@
   "initial_vault": "../valid/with-documents",
   "command": {
     "type": "DeleteDocument",
-    "base_version": 1,
     "payload": {
       "document_id": "d0000000-0000-4000-a000-000000000001"
     }
@@ -11,13 +10,35 @@
   "expected": {
     "result": "success",
     "assertions": [
-      { "type": "document_not_exists", "document_id": "d0000000-0000-4000-a000-000000000001" },
-      { "type": "block_exists", "block_id": "30000000-0000-4000-a000-000000000001" },
-      { "type": "block_exists", "block_id": "30000000-0000-4000-a000-000000000002" },
-      { "type": "block_exists", "block_id": "30000000-0000-4000-a000-000000000003" },
-      { "type": "block_exists", "block_id": "30000000-0000-4000-a000-000000000004" },
-      { "type": "edge_count", "count": 1 },
-      { "type": "event_emitted", "event": "DocumentDeleted", "document_id": "d0000000-0000-4000-a000-000000000001" }
+      {
+        "type": "document_not_exists",
+        "document_id": "d0000000-0000-4000-a000-000000000001"
+      },
+      {
+        "type": "block_exists",
+        "block_id": "30000000-0000-4000-a000-000000000001"
+      },
+      {
+        "type": "block_exists",
+        "block_id": "30000000-0000-4000-a000-000000000002"
+      },
+      {
+        "type": "block_exists",
+        "block_id": "30000000-0000-4000-a000-000000000003"
+      },
+      {
+        "type": "block_exists",
+        "block_id": "30000000-0000-4000-a000-000000000004"
+      },
+      {
+        "type": "edge_count",
+        "count": 1
+      },
+      {
+        "type": "event_emitted",
+        "event": "DocumentDeleted",
+        "document_id": "d0000000-0000-4000-a000-000000000001"
+      }
     ]
   }
 }

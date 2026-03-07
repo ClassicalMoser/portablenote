@@ -7,9 +7,18 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, SecondsFormat, Utc};
+use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 use super::types::Block;
+
+fn normalize_lf(s: &str) -> String {
+    s.replace("\r\n", "\n")
+}
+
+fn normalize_nfc(s: &str) -> String {
+    s.nfc().collect()
+}
 
 /// Errors encountered when parsing a block `.md` file.
 #[derive(Debug, thiserror::Error)]
@@ -82,7 +91,8 @@ pub fn parse_metadata_fields(header: &str) -> HashMap<String, String> {
 /// <content>
 /// ```
 pub fn parse_block_file(raw: &str) -> Result<Block, FormatError> {
-    let (header, content) = extract_metadata_header(raw)?;
+    let normalized = normalize_lf(raw);
+    let (header, content) = extract_metadata_header(&normalized)?;
     let fields = parse_metadata_fields(&header);
 
     let id_str = fields.get("id").ok_or(FormatError::MissingField("id"))?;
@@ -91,10 +101,11 @@ pub fn parse_block_file(raw: &str) -> Result<Block, FormatError> {
         value: id_str.clone(),
     })?;
 
-    let name = fields
-        .get("name")
-        .ok_or(FormatError::MissingField("name"))?
-        .clone();
+    let name = normalize_nfc(
+        fields
+            .get("name")
+            .ok_or(FormatError::MissingField("name"))?,
+    );
 
     let created_str = fields
         .get("created")
@@ -131,7 +142,8 @@ pub fn parse_block_file(raw: &str) -> Result<Block, FormatError> {
 /// validation rather than rejected outright. Fails only if the metadata header
 /// is missing entirely or the `id` field is absent/invalid.
 pub fn parse_block_file_permissive(raw: &str) -> Result<Block, FormatError> {
-    let (header, content) = extract_metadata_header(raw)?;
+    let normalized = normalize_lf(raw);
+    let (header, content) = extract_metadata_header(&normalized)?;
     let fields = parse_metadata_fields(&header);
 
     let id_str = fields.get("id").ok_or(FormatError::MissingField("id"))?;
@@ -142,7 +154,10 @@ pub fn parse_block_file_permissive(raw: &str) -> Result<Block, FormatError> {
 
     Ok(Block {
         id,
-        name: fields.get("name").cloned().unwrap_or_default(),
+        name: fields
+            .get("name")
+            .map(|n| normalize_nfc(n))
+            .unwrap_or_default(),
         content,
         created: fields
             .get("created")
@@ -156,11 +171,16 @@ pub fn parse_block_file_permissive(raw: &str) -> Result<Block, FormatError> {
 }
 
 /// Serialize a `Block` to the canonical block file format.
+///
+/// Normalizes name to NFC and content line endings to LF per spec §1.
 pub fn serialize_block_file(block: &Block) -> String {
+    let name = normalize_nfc(&block.name);
+    let content = normalize_lf(&block.content);
+
     let mut out = String::new();
     out.push_str("<!--\n");
     out.push_str(&format!("id: {}\n", block.id));
-    out.push_str(&format!("name: {}\n", block.name));
+    out.push_str(&format!("name: {}\n", name));
     out.push_str(&format!(
         "created: {}\n",
         block.created.to_rfc3339_opts(SecondsFormat::Secs, true)
@@ -170,9 +190,9 @@ pub fn serialize_block_file(block: &Block) -> String {
         block.modified.to_rfc3339_opts(SecondsFormat::Secs, true)
     ));
     out.push_str("-->\n");
-    if !block.content.is_empty() {
+    if !content.is_empty() {
         out.push('\n');
-        out.push_str(&block.content);
+        out.push_str(&content);
     }
     out
 }
@@ -390,6 +410,59 @@ mod tests {
     fn permissive_still_requires_metadata_header() {
         let err = parse_block_file_permissive("Just content.").unwrap_err();
         assert!(matches!(err, FormatError::MissingMetadataHeader));
+    }
+
+    #[test]
+    fn serialize_normalizes_crlf_to_lf() {
+        let id = Uuid::parse_str(BLOCK_ID).unwrap();
+        let ts = "2026-03-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let block = Block {
+            id,
+            name: "Test".to_string(),
+            content: "line1\r\nline2\r\n".to_string(),
+            created: ts,
+            modified: ts,
+        };
+
+        let serialized = serialize_block_file(&block);
+        assert!(
+            !serialized.contains("\r\n"),
+            "serialized output must not contain CRLF"
+        );
+        assert!(serialized.contains("line1\nline2\n"));
+    }
+
+    #[test]
+    fn serialize_normalizes_name_to_nfc() {
+        let id = Uuid::parse_str(BLOCK_ID).unwrap();
+        let ts = "2026-03-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        // NFD: e + combining acute
+        let block = Block {
+            id,
+            name: "cafe\u{0301}".to_string(),
+            content: String::new(),
+            created: ts,
+            modified: ts,
+        };
+
+        let serialized = serialize_block_file(&block);
+        // NFC: é = U+00E9
+        assert!(
+            serialized.contains("name: caf\u{00E9}\n"),
+            "name must be NFC-normalized in serialized output"
+        );
+    }
+
+    #[test]
+    fn parse_normalizes_crlf_content_to_lf() {
+        let raw = format!(
+            "<!--\nid: {BLOCK_ID}\nname: Test\ncreated: 2026-03-01T00:00:00Z\nmodified: 2026-03-01T00:00:00Z\n-->\r\n\r\nline1\r\nline2\r\n"
+        );
+        let block = parse_block_file(&raw).unwrap();
+        assert!(
+            !block.content.contains('\r'),
+            "parsed content must not contain CR"
+        );
     }
 
     // --- round-trip ---

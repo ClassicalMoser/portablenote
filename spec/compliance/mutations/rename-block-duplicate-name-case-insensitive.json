@@ -1,0 +1,15 @@
+{
+  "description": "RenameBlock: rejected when new name differs only by case from existing block",
+  "initial_vault": "../valid/with-refs",
+  "command": {
+    "type": "RenameBlock",
+    "payload": {
+      "block_id": "20000000-0000-4000-a000-000000000001",
+      "new_name": "getting started"
+    }
+  },
+  "expected": {
+    "result": "rejected",
+    "error": "Name"
+  }
+}

@@ -3,7 +3,6 @@
   "initial_vault": "../valid/minimal-drifted",
   "command": {
     "type": "AddBlock",
-    "base_version": 1,
     "payload": {
       "id": "10000000-0000-4000-a000-000000000099",
       "name": "New Block",
@@ -13,10 +12,24 @@
   "expected": {
     "result": "success",
     "assertions": [
-      { "type": "block_exists", "block_id": "10000000-0000-4000-a000-000000000099" },
-      { "type": "name_index_contains", "name": "New Block", "block_id": "10000000-0000-4000-a000-000000000099" },
-      { "type": "block_count", "count": 2 },
-      { "type": "event_emitted", "event": "BlockAdded", "block_id": "10000000-0000-4000-a000-000000000099" }
+      {
+        "type": "block_exists",
+        "block_id": "10000000-0000-4000-a000-000000000099"
+      },
+      {
+        "type": "name_index_contains",
+        "name": "New Block",
+        "block_id": "10000000-0000-4000-a000-000000000099"
+      },
+      {
+        "type": "block_count",
+        "count": 2
+      },
+      {
+        "type": "event_emitted",
+        "event": "BlockAdded",
+        "block_id": "10000000-0000-4000-a000-000000000099"
+      }
     ]
   }
 }

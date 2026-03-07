@@ -41,6 +41,8 @@ pub trait DocumentStore {
 #[cfg_attr(test, mockall::automock)]
 pub trait NameIndex {
     fn resolve(&self, name: &str) -> Option<Uuid>;
+    /// Case-insensitive lookup. Returns `Some((stored_name, uuid))` if any name matches.
+    fn resolve_ignore_case(&self, name: &str) -> Option<(String, Uuid)>;
 }
 
 /// Read and write the vault manifest (checksum chain).
