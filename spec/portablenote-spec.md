@@ -25,7 +25,7 @@ The spec is the contract. The tool is a proof of concept.
 - **Explicit over derived.** The graph is a first-class artifact, not rebuilt by scanning.
 - **Validation at every mutation.** Invariants hold after every transaction, not eventually.
 - **Git is version control.** Content history is delegated to git or equivalent. Format versioning is handled by the manifest.
-- **Markdown is the native format.** The system runs on markdown. Block content and documents are markdown; export to other formats (e.g. RTF, DOCX) may be supported as a separate concern.
+- **Markdown is the domain format.** Block content is CommonMark. The vault is a directory of plain `.md` files that any markdown reader can open without tooling. This is not an adapter choice — it is the spec.
 
 ---
 
@@ -79,7 +79,7 @@ Declares vault identity, spec version, content format, and integrity checksum.
 |---|---|---|
 | `vault_id` | UUID v4 | Permanent vault identity. Never changes. |
 | `spec_version` | semver string | PortableNote spec version this vault conforms to. |
-| `format` | string | Content format for all blocks. Always `"markdown"`; the system is markdown-native. |
+| `format` | string | Content format for all blocks in this vault. Always `"markdown"` in v0. Present as a migration signal for future readers; conforming v0 implementations may assert it equals `"markdown"` and reject vaults where it does not. |
 | `checksum` | string | SHA-256 over canonical serialization of blocks, edges, and documents. Prefixed `sha256:`. |
 | `previous_checksum` | string \| null | Checksum of the vault state before the most recent commit. `null` for the genesis commit (vault init). Together with `checksum`, forms a hash chain: each commit is a verifiable `(before, after)` state transition. Two manifests sharing a `previous_checksum` but differing on `checksum` indicate a fork. |
 
@@ -217,11 +217,10 @@ The metadata is YAML inside an HTML comment. Content follows immediately after t
 - Name and content are **decoupled after creation.** Editing content never changes `name`. Renaming never changes content. The name is a stable linking handle, not a content mirror.
 - On rename, the implementation updates the filename on disk to match the new encoded name. This is an infrastructure concern — the domain returns the rename result, the adapter performs the filesystem operation.
 
-### Markdown Content Rules
+### Content Rules
 
-When `format` is `"markdown"`:
+Block content is CommonMark. These rules are not format-conditional — they are domain invariants:
 
-- Content is CommonMark compliant.
 - **No heading syntax (h1–h6) inside block content.** Headings are block boundaries — encountering one during parsing ends the current block and begins a new one. A heading inside a stored block file is a parse error.
 - Heading syntax inside fenced code blocks is permitted — it is content, not structure.
 - Inline formatting (bold, italic, code spans, links) is permitted.
@@ -530,7 +529,7 @@ These invariants must hold after every mutation. Conforming implementations enfo
 5. Every `[[Name]]` inline reference in any block's content has a corresponding footer annotation and a corresponding edge in `block-graph.json`.
 6. Every footer annotation maps to a name that resolves to an existing block in the heap.
 7. Block names are vault-wide unique (case-insensitive). No two blocks share a `name` that differs only by capitalization.
-8. No block content contains heading syntax (h1–h6) outside fenced code blocks when format is `"markdown"`.
+8. No block content contains heading syntax (h1–h6) outside fenced code blocks.
 
 ### Load-Time Rules
 
