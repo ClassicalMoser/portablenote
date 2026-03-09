@@ -10,7 +10,7 @@ fn with_refs_checksum_matches_manifest() {
     assert_eq!(
         vault.manifest.checksum,
         computed,
-        "with-refs manifest checksum should match computed (update manifest.json if fixture content changed)"
+        "with-refs manifest checksum should match computed (update portablenote.json if fixture content changed)"
     );
 }
 
@@ -22,7 +22,7 @@ fn with_documents_checksum_matches_manifest() {
     assert_eq!(
         vault.manifest.checksum,
         computed,
-        "with-documents manifest checksum should match computed (update manifest.json if fixture content changed)"
+        "with-documents manifest checksum should match computed (update portablenote.json if fixture content changed)"
     );
 }
 
@@ -34,7 +34,7 @@ fn with_orphans_checksum_matches_manifest() {
     assert_eq!(
         vault.manifest.checksum,
         computed,
-        "with-orphans manifest checksum should match computed (update manifest.json if fixture content changed)"
+        "with-orphans manifest checksum should match computed (update portablenote.json if fixture content changed)"
     );
 }
 

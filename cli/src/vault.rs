@@ -11,6 +11,7 @@ use portablenote_core::application::journal::{self, Journal};
 use portablenote_core::application::ports::{BlockStore, ManifestStore, MutationGate, VaultPorts};
 use portablenote_core::application::results::VaultWrite;
 use portablenote_core::application::runner::UseCases;
+use portablenote_core::application::use_cases::init_vault;
 use portablenote_core::domain::checksum;
 use portablenote_core::domain::error::DomainError;
 use portablenote_core::domain::types::Block;
@@ -38,27 +39,15 @@ impl VaultSession {
         std::fs::create_dir_all(pn.join("blocks"))?;
         std::fs::create_dir_all(pn.join("documents"))?;
 
-        let manifest = serde_json::json!({
-            "vault_id": Uuid::new_v4().to_string(),
-            "spec_version": "0.1.0",
-            "format": "markdown",
-            "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            "previous_checksum": null
-        });
+        let result = init_vault::execute(None);
         std::fs::write(
-            pn.join("manifest.json"),
-            serde_json::to_string_pretty(&manifest).unwrap(),
+            pn.join("portablenote.json"),
+            serde_json::to_string_pretty(&result.manifest).unwrap(),
         )?;
-
         std::fs::write(
             pn.join("block-graph.json"),
-            serde_json::to_string_pretty(&serde_json::json!({
-                "version": "0.1.0",
-                "edges": []
-            }))
-            .unwrap(),
+            serde_json::to_string_pretty(&result.graph).unwrap(),
         )?;
-
         std::fs::write(pn.join("names.json"), "{}")?;
 
         Ok(())
@@ -78,7 +67,7 @@ impl VaultSession {
             graph: FsGraphStore::open(pn.join("block-graph.json"))?,
             documents: FsDocumentStore::open(pn.join("documents"))?,
             names: FsNameIndex::open(pn.join("names.json"))?,
-            manifest: FsManifestStore::open(pn.join("manifest.json")),
+            manifest: FsManifestStore::open(pn.join("portablenote.json")),
             journal: FsJournalStore::open(&pn),
             clock: SystemClock,
             base_checksum: None,

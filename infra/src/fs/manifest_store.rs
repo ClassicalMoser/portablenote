@@ -1,4 +1,4 @@
-//! Filesystem adapter for `ManifestStore`. Reads and writes `manifest.json`.
+//! Filesystem adapter for `ManifestStore`. Reads and writes `portablenote.json`.
 //!
 //! Used by the composition root to persist the checksum chain after each
 //! commit (§5a). No in-memory cache: `get()` reads from disk, `write()` writes.
@@ -9,13 +9,13 @@ use std::path::PathBuf;
 use portablenote_core::application::ports::ManifestStore;
 use portablenote_core::domain::types::Manifest;
 
-/// Filesystem-backed manifest (manifest.json).
+/// Filesystem-backed manifest (portablenote.json).
 pub struct FsManifestStore {
     path: PathBuf,
 }
 
 impl FsManifestStore {
-    /// Use the given path as manifest.json. Does not read until `get()`.
+    /// Use the given path as portablenote.json. Does not read until `get()`.
     pub fn open(path: PathBuf) -> Self {
         Self { path }
     }
@@ -39,10 +39,10 @@ impl FsManifestStore {
 
 impl ManifestStore for FsManifestStore {
     fn get(&self) -> Option<Manifest> {
-        self.read().expect("failed to read manifest.json")
+        self.read().expect("failed to read portablenote.json")
     }
 
     fn write(&self, manifest: &Manifest) {
-        self.persist(manifest).expect("failed to write manifest.json");
+        self.persist(manifest).expect("failed to write portablenote.json");
     }
 }

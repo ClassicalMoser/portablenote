@@ -5,6 +5,7 @@
 pub mod add_block;
 pub mod add_document;
 pub mod add_edge;
+pub mod init_vault;
 pub mod append_section;
 pub mod append_subsection;
 pub mod delete_block_cascade;

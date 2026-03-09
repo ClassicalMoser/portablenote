@@ -20,7 +20,7 @@ pub fn spec_dir() -> std::path::PathBuf {
 pub fn load_vault(vault_dir: &Path) -> Vault {
     let pn_dir = vault_dir.join("portablenote");
 
-    let manifest = load_manifest(&pn_dir.join("manifest.json"));
+    let manifest = load_manifest(&pn_dir.join("portablenote.json"));
     let graph = load_block_graph(&pn_dir.join("block-graph.json"));
     let blocks = load_blocks(&pn_dir.join("blocks"));
     let block_refs: HashMap<Uuid, Vec<(String, Uuid)>> = blocks
@@ -42,8 +42,8 @@ pub fn load_vault(vault_dir: &Path) -> Vault {
 }
 
 fn load_manifest(path: &Path) -> Manifest {
-    let content = fs::read_to_string(path).expect("Failed to read manifest.json");
-    serde_json::from_str(&content).expect("Failed to parse manifest.json")
+    let content = fs::read_to_string(path).expect("Failed to read portablenote.json");
+    serde_json::from_str(&content).expect("Failed to parse portablenote.json")
 }
 
 fn load_names(path: &Path) -> HashMap<String, Uuid> {

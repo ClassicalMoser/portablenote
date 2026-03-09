@@ -49,7 +49,7 @@ pub struct Document {
     pub sections: Vec<Section>,
 }
 
-/// Top-level vault metadata stored in `manifest.json`. The checksum chain
+/// Top-level vault metadata stored in `portablenote.json`. The checksum chain
 /// (`previous_checksum` → `checksum`) records each committed state transition
 /// and allows fork detection.
 #[derive(Debug, Clone, Serialize, Deserialize)]

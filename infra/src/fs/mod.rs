@@ -9,7 +9,7 @@
 //!
 //! ```text
 //! portablenote/
-//!   manifest.json          ← vault identity and checksum
+//!   portablenote.json      ← vault identity and checksum
 //!   block-graph.json       ← FsGraphStore
 //!   names.json             ← FsNameIndex
 //!   blocks/                ← FsBlockStore (one .md per block)

@@ -27,13 +27,6 @@ The spec is the contract. The tool is a proof of concept.
 - **Git is version control.** Content history is delegated to git or equivalent. Format versioning is handled by the manifest.
 - **Markdown is the native format.** The system runs on markdown. Block content and documents are markdown; export to other formats (e.g. RTF, DOCX) may be supported as a separate concern.
 
----
-
-## Domain and spec scope
-
-- **Domain:** The conceptual model, independent of storage or wire format. It comprises (1) **state** — blocks, graph, documents, and the manifest checksum chain as the identity of vault state; (2) **invariants** — the rules in §6 Domain Invariants and load-time rules that must hold; (3) **mutation gate** — whether a mutation is allowed (checksum match or drift with valid state) or rejected (StaleState, RemediationRequired); (4) **commit model** — client base (checksum last read/committed), pending diff (writes to apply), fast path (base matches remote → apply via atomic commit), slow path (base differs → diff, overlap check, rebase or reject). Overlap and rebase are domain concepts: same-artifact incompatible changes vs recomputing the intended outcome on top of current remote state. No file layout or journal schema here — only state and rules.
-
-- **Spec:** This document. The full contract for conforming implementations: domain rules above **plus** vault layout, manifest and journal schema, canonical serialization for checksum, commit protocol (§5a) and recovery. Implementations satisfy the spec by enforcing domain rules and using (or equivalent to) the described format and protocol.
 
 ---
 
@@ -47,7 +40,7 @@ A vault is a directory with the following layout:
   /<composition-name>/       # Multiple compositions supported
 
   /portablenote/             # Source artifacts (canonical data)
-    manifest.json            # Vault identity, version, format declaration, checksum chain
+    portablenote.json        # Vault identity, version, format declaration, checksum chain
     names.json               # Name-to-UUID index (derived from block metadata)
     /blocks                  # Primary — heap of named block files
     block-graph.json         # Primary — typed directed edges between blocks
@@ -65,9 +58,9 @@ A conforming implementation enforces the mutation gate (§5) before permitting a
 
 ---
 
-## 1. Manifest (`manifest.json`)
+## 1. Manifest (`portablenote.json`)
 
-Declares vault identity, spec version, content format, and integrity checksum.
+Declares vault identity, spec version, content format, and integrity checksum. The filename `portablenote.json` locates the vault root (this directory is the PortableNote source tree).
 
 ### Schema
 
@@ -382,6 +375,12 @@ Rebase is therefore part of the spec: when mutations do not overlap, the impleme
 
 ### Commands
 
+#### Vault lifecycle
+
+| Command | Description | Validates |
+|---|---|---|
+| `InitVault` | Create a new vault: write genesis `portablenote.json`, empty `block-graph.json`, and empty `names.json` under the target path. No prior state; no journal. The mutation gate does not apply (there is no vault yet). | Target path must not already contain a PortableNote vault (or implementation may overwrite). |
+
 #### Block Commands
 
 | Command | Description | Validates |
@@ -427,6 +426,7 @@ Every successful command emits a domain event. Events are not persisted in v0.
 | `DocumentDeleted` | document UUID |
 | `EdgeAdded` | edge UUID, source, target |
 | `EdgeRemoved` | edge UUID |
+| `VaultInitialized` | vault UUID |
 | `VaultOpened` | vault UUID, checksum_status |
 | `ChecksumMismatch` | expected, actual, drift_summary |
 
@@ -494,7 +494,7 @@ A conforming implementation must apply writes in this exact order:
 
 1. **Write `.journal`** — Atomically (temp file + rename on POSIX, or equivalent). The journal must be fully durable before any vault artifact is modified.
 2. **Apply writes** — Apply every entry in `writes` in order to the vault artifacts (blocks, graph, names, documents).
-3. **Write manifest** — Atomically write `manifest.json` with `checksum` set to `expected_checksum` and `previous_checksum` set to the current `manifest.checksum` (the pre-commit state). This is the **commit point**: once the manifest is written, the commit is complete.
+3. **Write manifest** — Atomically write `portablenote.json` with `checksum` set to `expected_checksum` and `previous_checksum` set to the current `manifest.checksum` (the pre-commit state). This is the **commit point**: once the manifest is written, the commit is complete.
 4. **Delete `.journal`** — Clean up.
 
 Step 3 is the commit point. If the process crashes after step 1 but before step 3, the journal is present on next open and recovery applies. If the process crashes after step 3, the journal may or may not be deleted — that is harmless, as recovery will detect Case A.

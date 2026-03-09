@@ -88,6 +88,12 @@ pub struct EdgeRemoved {
 
 // -- Vault lifecycle events --
 
+/// Emitted after a new vault is created (InitVault).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultInitialized {
+    pub vault_id: Uuid,
+}
+
 /// Emitted when a vault is opened and its checksum has been verified.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultOpened {
@@ -117,6 +123,7 @@ pub enum Event {
     DocumentDeleted(DocumentDeleted),
     EdgeAdded(EdgeAdded),
     EdgeRemoved(EdgeRemoved),
+    VaultInitialized(VaultInitialized),
     VaultOpened(VaultOpened),
     ChecksumMismatch(ChecksumMismatch),
 }

@@ -6,7 +6,8 @@
 
 use uuid::Uuid;
 
-use crate::domain::types::{Block, Document, Edge};
+use crate::domain::events::VaultInitialized;
+use crate::domain::types::{Block, BlockGraph, Document, Edge, Manifest};
 
 /// Every possible mutation to vault state.
 ///
@@ -31,4 +32,12 @@ pub enum VaultWrite {
 pub struct CommandResult<E> {
     pub writes: Vec<VaultWrite>,
     pub event: E,
+}
+
+/// The output of InitVault. No prior vault exists; the adapter writes the
+/// genesis manifest, empty graph, and empty names to the target path.
+pub struct InitVaultResult {
+    pub manifest: Manifest,
+    pub graph: BlockGraph,
+    pub event: VaultInitialized,
 }

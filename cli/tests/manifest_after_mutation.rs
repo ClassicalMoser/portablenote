@@ -41,7 +41,7 @@ fn manifest_checksum_updated_after_add_block() {
     let graph = FsGraphStore::open(pn_dir.join("block-graph.json")).unwrap();
     let documents = FsDocumentStore::open(pn_dir.join("documents")).unwrap();
     let names = FsNameIndex::open(pn_dir.join("names.json")).unwrap();
-    let manifest = FsManifestStore::open(pn_dir.join("manifest.json"));
+    let manifest = FsManifestStore::open(pn_dir.join("portablenote.json"));
 
     let gate = FsMutationGate {
         blocks: &blocks,
@@ -149,7 +149,7 @@ fn load_vault(vault_path: &std::path::Path) -> portablenote_core::domain::types:
     let graph = FsGraphStore::open(pn_dir.join("block-graph.json")).unwrap();
     let documents = FsDocumentStore::open(pn_dir.join("documents")).unwrap();
     let names = FsNameIndex::open(pn_dir.join("names.json")).unwrap();
-    let manifest = FsManifestStore::open(pn_dir.join("manifest.json"));
+    let manifest = FsManifestStore::open(pn_dir.join("portablenote.json"));
     let gate = FsMutationGate {
         blocks: &blocks,
         graph: &graph,
@@ -380,7 +380,7 @@ fn mutation_gate_returns_stale_state_when_expected_checksum_mismatches() {
     let graph = FsGraphStore::open(pn_dir.join("block-graph.json")).unwrap();
     let documents = FsDocumentStore::open(pn_dir.join("documents")).unwrap();
     let names = FsNameIndex::open(pn_dir.join("names.json")).unwrap();
-    let manifest = FsManifestStore::open(pn_dir.join("manifest.json"));
+    let manifest = FsManifestStore::open(pn_dir.join("portablenote.json"));
 
     let gate = FsMutationGate {
         blocks: &blocks,
