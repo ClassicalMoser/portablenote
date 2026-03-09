@@ -29,6 +29,14 @@ The spec is the contract. The tool is a proof of concept.
 
 ---
 
+## Domain and spec scope
+
+- **Domain:** The conceptual model, independent of storage or wire format. It comprises (1) **state** — blocks, graph, documents, and the manifest checksum chain as the identity of vault state; (2) **invariants** — the rules in §6 Domain Invariants and load-time rules that must hold; (3) **mutation gate** — whether a mutation is allowed (checksum match or drift with valid state) or rejected (StaleState, RemediationRequired); (4) **commit model** — client base (checksum last read/committed), pending diff (writes to apply), fast path (base matches remote → apply via atomic commit), slow path (base differs → diff, overlap check, rebase or reject). Overlap and rebase are domain concepts: same-artifact incompatible changes vs recomputing the intended outcome on top of current remote state. No file layout or journal schema here — only state and rules.
+
+- **Spec:** This document. The full contract for conforming implementations: domain rules above **plus** vault layout, manifest and journal schema, canonical serialization for checksum, commit protocol (§5a) and recovery. Implementations satisfy the spec by enforcing domain rules and using (or equivalent to) the described format and protocol.
+
+---
+
 ## Vault Structure
 
 A vault is a directory with the following layout:
@@ -166,15 +174,17 @@ Block files are named by their human-readable `name`, percent-encoded for filesy
 
 For example: `/blocks/Getting Started.md`, `/blocks/Café Culture.md`, `/blocks/Notes%3A Part 1.md`
 
+Block names must **not** contain `%`. Implementations reject creation or rename when the name contains `%` (ambiguous with percent-encoding in filenames).
+
 #### Percent-Encoding Algorithm
 
 The filename is derived from the block's `name` metadata field using RFC 3986 percent-encoding over the following restricted character set:
 
 | Encode | Characters |
-|---|---|
+|--------|-------------|
 | Filesystem-unsafe | `/ \ : * ? " < > \|` |
 | Control characters | U+0000–U+001F, U+007F |
-| Percent literal | `%` (to avoid ambiguity) |
+| Percent literal | `%` (to avoid ambiguity; names containing `%` are rejected) |
 
 All other characters — including spaces, unicode, and common punctuation — pass through unmodified. Unicode is normalized to NFC before encoding.
 
@@ -182,7 +192,7 @@ The filename is a **derived projection** of the metadata `name`, not the source 
 
 #### Filename Length
 
-Encoded filenames are truncated to 200 bytes (UTF-8). Names that exceed this after encoding are truncated and disambiguated with a numeric suffix: `Very Long Name That Exceeds... (2).md`. This limit accommodates all major filesystem path component limits (255 bytes on ext4, NTFS, HFS+) with room for the extension.
+Encoded filenames are truncated to 200 bytes (UTF-8) at a character boundary. This limit accommodates all major filesystem path component limits (255 bytes on ext4, NTFS, HFS+) with room for the extension. Disambiguation when multiple names truncate to the same string may be defined in a future revision.
 
 ### Block Metadata
 
@@ -204,16 +214,16 @@ The metadata is YAML inside an HTML comment. Content follows immediately after t
 | Field | Required | Description |
 |---|---|---|
 | `id` | Yes | UUID v4. Permanent. Never changes. The canonical identity in the graph. |
-| `name` | Yes | Human-readable name. Vault-wide unique (case-insensitive). Mutable. The linking handle. Defaults to first line of content on creation. |
+| `name` | Yes | Human-readable name. Vault-wide unique (case-insensitive). Mutable. The linking handle. **Required on creation** — the caller must supply the name; there is no default. |
 | `created` | Yes | ISO 8601 creation timestamp. |
 | `modified` | Yes | ISO 8601 last modification timestamp. Updated on every content mutation. |
 
 ### Name Rules
 
 - Names are **vault-wide unique, case-insensitive**. No two blocks may share a name that differs only by capitalization. `Notes` and `notes` are a collision. This ensures filenames are unambiguous on all platforms (Linux, macOS, Windows).
-- Names **must not contain `[` or `]`**. These characters are reserved for inline reference syntax (`[[Name]]` and footer `[Name]: uuid:`). A conforming implementation rejects block creation or rename when the name contains either character.
-- On creation, `name` defaults to the first line of the block's content, truncated to 120 characters.
-- On collision, a numeric suffix is appended automatically: `Getting Started (2)`.
+- Names **must not contain `[` or `]`**. These characters are reserved for CommonMark link syntax (`[text](url)`). A conforming implementation rejects block creation or rename when the name contains either character.
+- Names **must not contain `%`**. Rejected at creation or rename (ambiguous with percent-encoding in filenames).
+- **Naming is required when a block is created.** The caller supplies the name; there is no default from content. On name conflict (duplicate, case-insensitive), the implementation **rejects** the command — no automatic suffix or rename. (Import workflows may define their own collision handling; that is out of scope for the domain.)
 - Name and content are **decoupled after creation.** Editing content never changes `name`. Renaming never changes content. The name is a stable linking handle, not a content mirror.
 - On rename, the implementation updates the filename on disk to match the new encoded name. This is an infrastructure concern — the domain returns the rename result, the adapter performs the filesystem operation.
 
@@ -226,34 +236,18 @@ When `format` is `"markdown"`:
 - Heading syntax inside fenced code blocks is permitted — it is content, not structure.
 - Inline formatting (bold, italic, code spans, links) is permitted.
 
-### Inline Block References
+### Block Reference Links
 
-A block references another block by name using double-bracket syntax:
-
-```markdown
-See also [[Getting Started]] for more context.
-```
-
-Inline references use the human-readable `name`, never the UUID. References are live — they resolve at read time against the current heap. When a block is renamed, all inline references to it are updated automatically by the system (every occurrence of the reference syntax in content is updated; the implementation does not distinguish code blocks or other literal context — content is treated as a single string for propagation). When a referenced block is deleted, inline references are reverted to plain text (the `[[brackets]]` are removed, leaving only the name string).
-
-### Footer Annotations
-
-Every inline reference in a block's content must have a corresponding footer annotation mapping the name to the target UUID. Footer annotations are the bridge between human-readable content and the graph.
+A block references another block using CommonMark inline link syntax with the `block:` scheme. The destination is the target block's UUID.
 
 ```markdown
-<!--
-id: a3f9b2c1-...
-name: My Analysis
--->
-
-See also [[Getting Started]] for context. This [[Key Insight]] elaborates further.
-
-<!-- refs -->
-[Getting Started]: uuid:b4e8d3f2-...
-[Key Insight]: uuid:c7a1e9d4-...
+See also [Getting Started](block:b4e8d3f2-4a1c-4e2d-8f3a-123456789abc) for more context.
 ```
 
-Footer annotations are maintained by the system, not hand-written by the user. On rename, the system updates the annotation. On deletion of a target block, the annotation is removed and the inline reference is reverted to plain text. `block-graph.json` is authoritative — footer annotations are the human-readable, git-diffable record of the same edges.
+- **Format**: `[display text](block:uuid)` only. No reference-style links; no footer. Multiple links to the same block in one block's content are allowed; one edge (source → target) in the graph covers all.
+- **Resolution**: App-side only; the `block:` scheme is not fs-native. Name and reference registries stay up to date.
+- **Rename propagation**: When a block is renamed, every link that targets it is updated: each `[old](block:uuid)` becomes `[new name](block:uuid)`; the graph is unchanged.
+- **Delete**: When a target block is deleted, each link to it is reverted to plain text (the link is removed, the display text remains).
 
 ---
 
@@ -261,7 +255,7 @@ Footer annotations are maintained by the system, not hand-written by the user. O
 
 The primary knowledge structure. Directed edges between block UUIDs. This is the canonical graph — edges are stored by UUID, not by name, so they survive renames without modification.
 
-The graph is live. It watches its members. When a block is renamed, the graph does not change — edges are UUID-based — but the system propagates the new name to all footer annotations and inline references in block content.
+The graph is live. It watches its members. When a block is renamed, the graph does not change — edges are UUID-based — but the system propagates the new name to all block-reference links in content.
 
 ### Schema
 
@@ -294,7 +288,7 @@ An edge means: this block references that block. The meaning of the relationship
 - Freely cyclic. Cycles are valid and expected.
 - Order is irrelevant. The edge list is unordered.
 - Referential integrity: every UUID in `source` or `target` must exist in the heap. Dangling UUIDs are a validation error.
-- Every `[[Name]]` inline reference in any block's content must have a corresponding edge in `block-graph.json`. The graph and footer annotations are always consistent.
+- Every block-reference link `[text](block:uuid)` in any block's content must have a corresponding edge in `block-graph.json`. The graph is authoritative.
 
 ---
 
@@ -302,13 +296,13 @@ An edge means: this block references that block. The meaning of the relationship
 
 Documents are **optional views** over the block heap. They are second-class to the block graph — the graph is the knowledge base, documents are a presentation layer. For typical and casual users, documents are the natural way to read and navigate: a linear or hierarchical arrangement of blocks that renders as a familiar document tree.
 
-A document does not own its blocks; the heap does. The same block may appear in multiple documents. Rearranging or deleting a document never affects the heap or the block graph. Internal links within a document are just block-graph edges between blocks that happen to appear in the same document — there is no separate document-internal link structure. `[[Block Name]]` in content resolves via the block graph regardless of which document view you're in.
+A document does not own its blocks; the heap does. The same block may appear in multiple documents. Rearranging or deleting a document never affects the heap or the block graph. Internal links within a document are just block-graph edges between blocks that happen to appear in the same document — there is no separate document-internal link structure. `[Block Name](block:uuid)` in content resolves via the block graph regardless of which document view you're in.
 
 Each document is a single JSON file in `/documents`, named by UUID: `<uuid>.json`.
 
 ### Document Identity
 
-Every document has a **root block** — the block whose `name` is the document's title. The root block is the `h1` block: the first block in the document. `[[Document Title]]` in any block's content resolves to the document's root block UUID. Document-level linking is block-level linking — there is no separate document entity in the graph.
+Every document has a **root block** — the block whose `name` is the document's title. The root block is the `h1` block: the first block in the document. A link to the document's root block in any block's content uses `[Document Title](block:root-uuid)`. Document-level linking is block-level linking — there is no separate document entity in the graph.
 
 ### Schema
 
@@ -345,7 +339,7 @@ A document node is a reference to a block UUID plus its position in the hierarch
 
 ### Document Properties
 
-- **Two levels of intra-document hierarchy.** Root (h1) → sections (h2) → subsections (h3). Content requiring deeper hierarchy becomes a new document, with a `[[reference]]` edge from the subsection block to the new document's root block.
+- **Two levels of intra-document hierarchy.** Root (h1) → sections (h2) → subsections (h3). Content requiring deeper hierarchy becomes a new document, with a block-reference link (and edge) from the subsection block to the new document's root block.
 - **Non-exclusive membership.** A block UUID may appear in multiple documents. The heap owns the block.
 - **Documents are flat.** Documents do not nest within documents. Relationships between documents are expressed as block-level reference edges between their respective root blocks.
 - **Acyclic.** A block may not be both an ancestor and a descendant of itself within a document.
@@ -374,6 +368,18 @@ Before applying any mutation, a conforming implementation must enforce the follo
 
 Compliance: an implementation that permits a mutation when the gate would block (e.g. checksum mismatch and validation reports violations) is non-conforming. An implementation that blocks mutation when checksums match, or when checksums mismatch but validation passes, is also non-conforming.
 
+### Commit model and rebase
+
+A client that commits changes maintains a **current base** (the vault checksum it last read or committed) and a **pending diff** (the ordered writes it intends to apply). The commit protocol (§5a) is always used to apply writes atomically; the commit model defines how the client proceeds when the vault has changed since that base.
+
+- **Fast path — checksum matches.** If the vault’s current `manifest.checksum` equals the client’s base, the client applies its pending writes via the commit protocol (write journal → apply writes → write manifest → delete journal). No rebase is required.
+
+- **Slow path — checksum mismatch.** If the vault’s current checksum differs from the client’s base, the client must not apply its pending writes directly. It must **diff** its base against the current remote state to determine whether its mutations **overlap** with remote changes (e.g. same block or document modified in both).  
+  - **Non-overlapping:** The implementation **rebase**s: it recomputes the client’s intended outcome on top of the current remote state (so the resulting write set is consistent with the current vault), then applies that write set via the same atomic commit protocol. The commit is a single atomic operation; there is no partial apply.  
+  - **Overlapping:** The implementation **rejects** the commit and surfaces the conflict for manual reconciliation. Only true semantic conflicts (same artifact, incompatible changes) trigger this; derived or system state (e.g. the names index) is not considered for overlap and is updated to reflect the current vault regardless of rebase outcome.
+
+Rebase is therefore part of the spec: when mutations do not overlap, the implementation must rebase and then commit atomically. Manual reconciliation is required only when overlapping changes cannot be merged automatically.
+
 ### Commands
 
 #### Block Commands
@@ -381,10 +387,10 @@ Compliance: an implementation that permits a mutation when the gate would block 
 | Command | Description | Validates |
 |---|---|---|
 | `AddBlock` | Add a new block file to `/blocks`. | UUID unique, name unique, metadata complete. |
-| `RenameBlock` | Change a block's `name`. Propagates to all inline refs and footer annotations vault-wide. | Block exists, new name unique vault-wide. |
+| `RenameBlock` | Change a block's `name`. Propagates to all block-reference links that target this block vault-wide. | Block exists, new name unique vault-wide. |
 | `MutateBlockContent` | Update block content. Updates `modified` timestamp. | Block exists, content valid for declared format, no heading syntax outside fenced code. |
 | `DeleteBlockSafe` | Delete block. Fails if incoming reference edges exist. | No incoming edges in `block-graph.json`. |
-| `DeleteBlockCascade` | Delete block. Removes all incoming and outgoing edges. Reverts all inline `[[Name]]` references in other blocks to plain text. Removes corresponding footer annotations. Removes the block from every document that references it: removes the section or subsection; if the block is a document root, deletes that document. Emits warning with counts. | Block exists. |
+| `DeleteBlockCascade` | Delete block. Removes all incoming and outgoing edges. Reverts all block-reference links to this block (in other blocks' content) to plain text. Removes the block from every document that references it: removes the section or subsection; if the block is a document root, deletes that document. Emits warning with counts. | Block exists. |
 
 #### Document Commands
 
@@ -527,8 +533,8 @@ These invariants must hold after every mutation. Conforming implementations enfo
 2. Every block UUID in a document's `root`, `sections`, or `subsections` fields exists in the heap.
 3. No block is its own ancestor within a document (acyclicity).
 4. `block-graph.json` contains only block → block edges.
-5. Every `[[Name]]` inline reference in any block's content has a corresponding footer annotation and a corresponding edge in `block-graph.json`.
-6. Every footer annotation maps to a name that resolves to an existing block in the heap.
+5. Every block-reference link `[text](block:uuid)` in any block's content has a corresponding edge in `block-graph.json`.
+6. Every such link's target UUID exists in the heap.
 7. Block names are vault-wide unique (case-insensitive). No two blocks share a `name` that differs only by capitalization.
 8. No block content contains heading syntax (h1–h6) outside fenced code blocks when format is `"markdown"`.
 
@@ -558,7 +564,7 @@ Each composition produces a rendered Markdown document tree at the vault root un
 
 - A block's `name` is rendered as a heading. Heading level is determined by the block's position in the document definition: root = h1, section = h2, subsection = h3. The block's content contains no heading syntax — the heading is emitted by the renderer.
 - Block content is rendered as-is in document order.
-- Inline block references render as wikilinks using the target block's current `name`: `[[Block Name]]`.
+- Block-reference links render using the target block's current `name`: `[Block Name](block:uuid)`.
 - Block-graph edges are not represented in rendered output. They are a source artifact only.
 - Rendering is fully reactive. Every domain event that mutates source artifacts triggers an output rebuild for affected compositions. The rendered tree is never edited directly — it is always derived from source artifacts.
 - Rendered output may be committed to git for sharing/portability, or gitignored. That is the user's choice.
@@ -580,11 +586,11 @@ Every heading encountered during import ends the current block and begins a new 
 | `h3` | Subsection block. Added to parent section's `subsections`. Renders as h3. |
 | `h4+` | New document is created. A reference edge is added from the h3 subsection block to the new document's root block. Deep hierarchy becomes graph structure. |
 
-On name collision during import, a numeric suffix is appended automatically.
+Name collision during import is out of scope for the domain (domain rejects on conflict). Import workflows may define their own handling in a future revision.
 
-### Wikilink Conversion
+### Block Reference Conversion
 
-`[[Page Name]]` wikilinks are resolved to block names where possible. A resolved wikilink becomes `[[Block Name]]` with a footer annotation mapping the name to the target UUID and a corresponding edge added to `block-graph.json`. Unresolvable wikilinks are preserved as plain text with a warning emitted.
+During import, link syntax is normalized to the canonical form. Resolved references become `[Block Name](block:uuid)` with a corresponding edge added to `block-graph.json`. Unresolvable references are preserved as plain text with a warning emitted.
 
 ### Metadata Mapping
 
@@ -592,18 +598,18 @@ Existing metadata fields not recognized by the spec are preserved in the block's
 
 ---
 
-## 9. Markdown Block Format (Domain)
+## 9. Markdown Block Format
 
-The system is markdown-native. Block content is markdown; parsing and serialization of block files (metadata header + markdown body) belong in the domain. Rendered documents are markdown trees. Export to other formats (e.g. RTF, HTML, DOCX) is optional and lives outside the core contract — the canonical source is always markdown.
+The system is markdown-native. Block content is markdown; parsing and serialization of block files (metadata header + markdown body) are implemented in the application layer. Rendered documents are markdown trees. Export to other formats (e.g. RTF, HTML, DOCX) is optional and lives outside the core contract — the canonical source is always markdown.
 
 ### Required Capabilities (Markdown)
 
 A conforming implementation must provide:
 
-- **Parse** — Read a block `.md` file and extract structured content (metadata comment, body, footer annotations).
-- **Serialize** — Write a block back to the canonical markdown block file format.
+- **Parse** — Read a block `.md` file and extract structured content (metadata comment, body) and block-reference links (scheme `block:`) as a list of (display text, target UUID).
+- **Serialize** — Write a block back to the canonical markdown block file format (metadata + body with inline links only).
 - **Validate** — Check a raw content string against markdown rules (e.g. no headings outside fenced code).
-- **Extract inline references** — Return all inline block reference names (`[[Name]]`) from a content string.
+- **Extract block references** — Return all block-reference links from a content string as (display text, target UUID) pairs.
 
 ### Manifest Format Field
 

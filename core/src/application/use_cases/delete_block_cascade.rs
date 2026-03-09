@@ -1,15 +1,16 @@
 use uuid::Uuid;
 
+use crate::application::block_file;
 use crate::application::ports::{BlockStore, Clock, DocumentStore, GraphStore};
 use crate::application::results::{CommandResult, VaultWrite};
-use crate::domain::blocks;
 use crate::domain::documents;
 use crate::domain::error::DomainError;
 use crate::domain::events::BlockDeleted;
+use crate::domain::types::Block;
 
 /// Force-delete a block, removing all edges (incoming + outgoing), reverting
-/// inline references in other blocks to plain text, and removing the block
-/// from every document that references it (section, subsection, or root).
+/// block-reference links to this block in other blocks to plain text, and removing
+/// the block from every document that references it (section, subsection, or root).
 ///
 /// Multi-store: returns a `CommandResult` with `WriteDocument`/`DeleteDocument`
 /// for affected documents, `SaveBlock` for reverted blocks, `RemoveEdge`, `DeleteBlock`, and `RemoveName`.
@@ -42,9 +43,21 @@ pub fn execute(
         }
     }
 
-    let referencing = block_store.find_by_ref(&block.name);
-    let (reverted_blocks, inline_refs_reverted) =
-        blocks::revert_refs(referencing, &block.name, block_id, clock.now());
+    let referencing = block_store.find_by_target(block_id);
+    let now = clock.now();
+    let mut inline_refs_reverted = 0usize;
+    let reverted_blocks: Vec<Block> = referencing
+        .into_iter()
+        .map(|mut b| {
+            let (new_content, count) = block_file::revert_refs_in_content(&b.content, block_id);
+            if count > 0 {
+                inline_refs_reverted += count;
+                b.content = new_content;
+                b.modified = now;
+            }
+            b
+        })
+        .collect();
 
     let all_edges = graph.edges_for(block_id);
 
@@ -108,7 +121,7 @@ mod tests {
         let clock = mock_clock();
 
         blocks.expect_get().with(eq(id())).return_once(move |_| Some(make_block(id(), "Alpha")));
-        blocks.expect_find_by_ref().with(eq("Alpha")).return_once(|_| vec![]);
+        blocks.expect_find_by_target().with(eq(id())).return_once(|_| vec![]);
         graph.expect_edges_for().with(eq(id())).return_once(move |_| {
             vec![
                 Edge { id: edge_in(), source: other(), target: id() },
@@ -130,7 +143,7 @@ mod tests {
         let documents = mock_documents_empty();
 
         blocks.expect_get().with(eq(id())).return_once(move |_| Some(make_block(id(), "Alpha")));
-        blocks.expect_find_by_ref().with(eq("Alpha")).return_once(|_| vec![]);
+        blocks.expect_find_by_target().with(eq(id())).return_once(|_| vec![]);
         graph.expect_edges_for().with(eq(id())).return_once(|_| vec![]);
 
         let clock = mock_clock();
@@ -149,13 +162,13 @@ mod tests {
         let referrer = Block {
             id: other(),
             name: "Referrer".to_string(),
-            content: format!("See [[Alpha]] here.\n\n<!-- refs -->\n[Alpha]: uuid:{ID}\n"),
+            content: format!("See [Alpha](block:{ID}) here."),
             created: Utc::now(),
             modified: Utc::now(),
         };
 
         blocks.expect_get().with(eq(id())).return_once(move |_| Some(make_block(id(), "Alpha")));
-        blocks.expect_find_by_ref().with(eq("Alpha")).return_once(move |_| vec![referrer]);
+        blocks.expect_find_by_target().with(eq(id())).return_once(move |_| vec![referrer]);
         graph.expect_edges_for().with(eq(id())).return_once(|_| vec![]);
 
         let clock = mock_clock();
@@ -194,7 +207,7 @@ mod tests {
         let mut documents = MockDocumentStore::new();
 
         blocks.expect_get().with(eq(id())).return_once(move |_| Some(make_block(id(), "Alpha")));
-        blocks.expect_find_by_ref().with(eq("Alpha")).return_once(|_| vec![]);
+        blocks.expect_find_by_target().with(eq(id())).return_once(|_| vec![]);
         graph.expect_edges_for().with(eq(id())).return_once(|_| vec![]);
         documents.expect_list_ids().return_once(move || vec![doc_id]);
         documents.expect_get().with(eq(doc_id)).return_once(move |_| Some(doc));

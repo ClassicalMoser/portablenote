@@ -11,6 +11,9 @@ use serde::Deserialize;
 pub struct MutationScenario {
     pub description: String,
     pub initial_vault: String,
+    /// When set, the client's base checksum (§5) for the mutation gate. If absent, the harness uses the current vault manifest checksum (fast path).
+    #[serde(default)]
+    pub client_base_checksum: Option<String>,
     pub command: ScenarioCommand,
     pub expected: Expected,
 }

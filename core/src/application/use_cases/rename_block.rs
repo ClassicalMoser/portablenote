@@ -1,13 +1,15 @@
 use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
+use crate::application::block_file;
 use crate::application::ports::{BlockStore, Clock, NameIndex};
 use crate::application::results::{CommandResult, VaultWrite};
 use crate::domain::blocks;
 use crate::domain::error::DomainError;
 use crate::domain::events::BlockRenamed;
+use crate::domain::types::Block;
 
-/// Rename a block and propagate `[[wikilink]]` updates to all referencing blocks.
+/// Rename a block and propagate block-reference link updates to all referencing blocks.
 ///
 /// Multi-store: returns a `CommandResult` with `SaveBlock` writes for the renamed
 /// block and all propagated blocks, plus `RemoveName`/`SetName` index swaps.
@@ -33,10 +35,23 @@ pub fn execute(
 
     let old_name = block.name.clone();
     let now = clock.now();
-    let renamed = blocks::apply_rename(block, &new_name, now)?;
+    let renamed = blocks::apply_rename(block.clone(), &new_name, now)?;
 
-    let referencing = block_store.find_by_ref(&old_name);
-    let (propagated, refs_updated) = blocks::propagate_rename(referencing, &old_name, &new_name, now);
+    let referencing = block_store.find_by_target(block_id);
+    let mut refs_updated = 0usize;
+    let propagated: Vec<Block> = referencing
+        .into_iter()
+        .map(|mut b| {
+            let (new_content, count) =
+                block_file::rename_refs_in_content(&b.content, block_id, &new_name);
+            if count > 0 {
+                refs_updated += count;
+                b.content = new_content;
+                b.modified = now;
+            }
+            b
+        })
+        .collect();
 
     let mut writes = Vec::new();
     writes.push(VaultWrite::WriteBlock(renamed.clone()));
@@ -105,8 +120,8 @@ mod tests {
             .with(eq("Beta"))
             .return_once(|_| None);
         blocks
-            .expect_find_by_ref()
-            .with(eq("Alpha"))
+            .expect_find_by_target()
+            .with(eq(id()))
             .return_once(|_| vec![]);
 
         let clock = mock_clock();
@@ -128,10 +143,11 @@ mod tests {
         let mut blocks = MockBlockStore::new();
         let mut names = MockNameIndex::new();
 
+        let referrer_content = format!("See [Alpha](block:{})", id());
         let referrer = Block {
             id: other(),
             name: "Referrer".to_string(),
-            content: "See [[Alpha]].\n\n<!-- refs -->\n[Alpha]: uuid:00000000-0000-4000-a000-000000000001\n".to_string(),
+            content: referrer_content,
             created: Utc::now(),
             modified: Utc::now(),
         };
@@ -145,8 +161,8 @@ mod tests {
             .with(eq("Beta"))
             .return_once(|_| None);
         blocks
-            .expect_find_by_ref()
-            .with(eq("Alpha"))
+            .expect_find_by_target()
+            .with(eq(id()))
             .return_once(move |_| vec![referrer]);
 
         let clock = mock_clock();
@@ -154,7 +170,7 @@ mod tests {
 
         // SaveBlock(renamed), SaveBlock(propagated), RemoveName, SetName
         assert_eq!(result.writes.len(), 4);
-        assert!(matches!(&result.writes[1], VaultWrite::WriteBlock(b) if b.content.contains("[[Beta]]")));
+        assert!(matches!(&result.writes[1], VaultWrite::WriteBlock(b) if b.content.contains("[Beta](block:") && b.content.contains(&id().to_string())));
         assert_eq!(result.event.refs_updated, 1);
     }
 
@@ -208,7 +224,7 @@ mod tests {
             .expect_resolve_ignore_case()
             .return_once(|_| None);
         blocks
-            .expect_find_by_ref()
+            .expect_find_by_target()
             .return_once(|_| vec![]);
 
         let clock = mock_clock();

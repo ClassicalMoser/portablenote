@@ -3,6 +3,42 @@ mod common;
 use portablenote_core::domain::checksum;
 
 #[test]
+fn with_refs_checksum_matches_manifest() {
+    let dir = common::spec_dir().join("valid").join("with-refs");
+    let vault = common::load_vault(&dir);
+    let computed = checksum::compute(&vault);
+    assert_eq!(
+        vault.manifest.checksum,
+        computed,
+        "with-refs manifest checksum should match computed (update manifest.json if fixture content changed)"
+    );
+}
+
+#[test]
+fn with_documents_checksum_matches_manifest() {
+    let dir = common::spec_dir().join("valid").join("with-documents");
+    let vault = common::load_vault(&dir);
+    let computed = checksum::compute(&vault);
+    assert_eq!(
+        vault.manifest.checksum,
+        computed,
+        "with-documents manifest checksum should match computed (update manifest.json if fixture content changed)"
+    );
+}
+
+#[test]
+fn with_orphans_checksum_matches_manifest() {
+    let dir = common::spec_dir().join("valid").join("with-orphans");
+    let vault = common::load_vault(&dir);
+    let computed = checksum::compute(&vault);
+    assert_eq!(
+        vault.manifest.checksum,
+        computed,
+        "with-orphans manifest checksum should match computed (update manifest.json if fixture content changed)"
+    );
+}
+
+#[test]
 fn valid_vaults_have_no_drift() {
     for name in &["minimal", "with-refs", "with-documents", "with-orphans"] {
         let dir = common::spec_dir().join("valid").join(name);
@@ -52,8 +88,11 @@ fn load_with_refs_vault() {
 
     let core_concepts_id = vault.names.get("Core Concepts").unwrap();
     let block = &vault.blocks[core_concepts_id];
-    assert!(block.content.contains("[[Getting Started]]"));
-    assert!(block.content.contains("<!-- refs -->"));
+    assert!(
+        block.content.contains("[Getting Started](block:20000000-0000-4000-a000-000000000002)"),
+        "content should have block-reference link: {}",
+        block.content
+    );
 }
 
 #[test]

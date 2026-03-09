@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use portablenote_core::application::block_file;
 use portablenote_core::domain::format;
 use portablenote_core::domain::types::*;
 use uuid::Uuid;
@@ -22,6 +23,10 @@ pub fn load_vault(vault_dir: &Path) -> Vault {
     let manifest = load_manifest(&pn_dir.join("manifest.json"));
     let graph = load_block_graph(&pn_dir.join("block-graph.json"));
     let blocks = load_blocks(&pn_dir.join("blocks"));
+    let block_refs: HashMap<Uuid, Vec<(String, Uuid)>> = blocks
+        .values()
+        .map(|b| (b.id, block_file::extract_block_refs(&b.content)))
+        .collect();
     let documents = load_documents(&pn_dir.join("documents"));
     let names = load_names(&pn_dir.join("names.json"));
 
@@ -31,6 +36,7 @@ pub fn load_vault(vault_dir: &Path) -> Vault {
         graph,
         documents,
         names,
+        block_refs,
         version: 0,
     }
 }

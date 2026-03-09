@@ -18,8 +18,8 @@ pub trait Clock {
 pub trait BlockStore {
     fn get(&self, id: Uuid) -> Option<Block>;
     fn list(&self) -> Vec<Block>;
-    /// Return all blocks whose content contains `[[name]]`.
-    fn find_by_ref(&self, name: &str) -> Vec<Block>;
+    /// Return all blocks whose content contains a link to the given block (`](block:id)`).
+    fn find_by_target(&self, target_block_id: Uuid) -> Vec<Block>;
 }
 
 /// Read-only access to the reference graph.

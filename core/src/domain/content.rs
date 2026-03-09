@@ -1,3 +1,7 @@
+//! Content helpers for block body. Heading detection is used by domain (create/apply_content, invariants).
+//! The wikilink/footer helpers below are legacy: canonical format is `[text](block:uuid)` (see application::block_file).
+//! They remain for domain/format round-trip tests and content's own tests; no longer used by invariants or use cases.
+
 use std::collections::HashMap;
 
 use uuid::Uuid;

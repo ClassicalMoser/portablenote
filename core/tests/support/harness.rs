@@ -13,6 +13,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use portablenote_infra::SystemClock;
+use portablenote_core::application::gate;
+use portablenote_core::domain::error::DomainError;
 use portablenote_core::application::use_cases::{
     add_block, add_document, add_edge, append_section, append_subsection, delete_block_cascade,
     delete_block_safe, delete_document, mutate_block_content, remove_edge, remove_section,
@@ -59,20 +61,23 @@ pub fn run_scenario(filename: &str) {
     let vault = crate::common::load_vault(&vault_path);
     let mut stores = factory::from_vault(&vault);
 
-    // Mutation gate (§5): checksum match → allow; mismatch → revalidate; violations → block
-    let gate_allows = if portablenote_core::domain::checksum::is_drifted(&vault) {
-        let violations = portablenote_core::domain::invariants::validate_vault(&vault);
-        violations.is_empty()
-    } else {
-        true
-    };
+    // Mutation gate (§5): pass client base (from scenario or current manifest); OCC then drift/revalidate.
+    let base = scenario
+        .client_base_checksum
+        .as_deref()
+        .unwrap_or_else(|| vault.manifest.checksum.as_str());
 
-    let outcome = if gate_allows {
-        dispatch(&scenario.command, &mut stores)
-    } else {
-        CommandOutcome::Rejected {
-            error: "Remediation required: checksum mismatch and validation reported violations".to_string(),
-        }
+    let outcome = match gate::mutation_gate(&vault, Some(base)) {
+        Ok(()) => dispatch(&scenario.command, &mut stores),
+        Err(DomainError::StaleState { expected, actual }) => CommandOutcome::Rejected {
+            error: format!("StaleState: expected {expected}, actual {actual}"),
+        },
+        Err(DomainError::RemediationRequired(n)) => CommandOutcome::Rejected {
+            error: format!("Remediation required: {n} violation(s)"),
+        },
+        Err(e) => CommandOutcome::Rejected {
+            error: e.to_string(),
+        },
     };
 
     if scenario.expected.result == "rejected" {

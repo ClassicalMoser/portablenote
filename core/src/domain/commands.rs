@@ -11,7 +11,7 @@ pub struct AddBlock {
     pub content: String,
 }
 
-/// Change a block's human-readable name. Propagates `[[wikilink]]` renames
+/// Change a block's human-readable name. Propagates block-reference link updates
 /// across all referencing blocks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenameBlock {

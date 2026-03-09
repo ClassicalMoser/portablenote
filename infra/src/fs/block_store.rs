@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use uuid::Uuid;
 
+use portablenote_core::application::block_file;
 use portablenote_core::application::ports::BlockStore;
 use portablenote_core::domain::format;
 use portablenote_core::domain::types::Block;
@@ -111,11 +112,10 @@ impl BlockStore for FsBlockStore {
         self.cache.values().cloned().collect()
     }
 
-    fn find_by_ref(&self, name: &str) -> Vec<Block> {
-        let pattern = format!("[[{name}]]");
+    fn find_by_target(&self, target_block_id: Uuid) -> Vec<Block> {
         self.cache
             .values()
-            .filter(|b| b.content.contains(&pattern))
+            .filter(|b| block_file::content_references_block(&b.content, target_block_id))
             .cloned()
             .collect()
     }
@@ -222,15 +222,19 @@ mod tests {
     }
 
     #[test]
-    fn find_by_ref_matches_inline_refs() {
+    fn find_by_target_matches_block_ref_links() {
         let (_dir, blocks_dir) = setup();
         let mut store = FsBlockStore::open(blocks_dir).unwrap();
 
-        store.save(&make_block("Referrer", "See [[Target]] here."));
-        store.save(&make_block("Target", "I am the target."));
+        let target = make_block("Target", "I am the target.");
+        let target_id = target.id;
+        store.save(&target);
+
+        let referrer_content = format!("See [Target](block:{target_id}) here.");
+        store.save(&make_block("Referrer", &referrer_content));
         store.save(&make_block("Other", "No refs here."));
 
-        let results = store.find_by_ref("Target");
+        let results = store.find_by_target(target_id);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "Referrer");
     }

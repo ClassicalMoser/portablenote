@@ -111,6 +111,7 @@ mod tests {
             },
             documents: HashMap::new(),
             names: HashMap::new(),
+            block_refs: HashMap::new(),
             version: 0,
         }
     }

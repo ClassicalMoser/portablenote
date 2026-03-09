@@ -10,6 +10,7 @@
 //! - **`runner`** — `UseCases` surface: `UseCases::new(ports)` at composition root
 //! - **`use_cases`** — One module per spec command, each exposing an `execute` function
 
+pub mod block_file;
 pub mod commit;
 pub mod gate;
 pub mod journal;

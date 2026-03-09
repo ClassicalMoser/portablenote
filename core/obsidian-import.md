@@ -23,13 +23,12 @@ Each Obsidian `.md` file is split at heading boundaries per the spec's import ru
 
 Content between headings becomes the block body. The first block inherits the document role: if the file starts without a heading, the filename (sans extension) is used as the root block name.
 
-### 2. Resolve wikilinks into graph edges
+### 2. Resolve wikilinks into block-reference links
 
-Obsidian's `[[Page Name]]` links map naturally to PortableNote's `[[Block Name]]` inline references:
+Obsidian's `[[Page Name]]` links are converted to PortableNote's canonical block-reference format:
 
 - For each `[[Page Name]]` wikilink, find the block whose name matches (the root block of the page with that name).
-- Replace with `[[Block Name]]` and add a footer annotation mapping the name to the target UUID.
-- Add a corresponding edge to `block-graph.json`.
+- Replace with `[Block Name](block:target-uuid)` and add a corresponding edge to `block-graph.json`.
 - Wikilinks to headings (`[[Page Name#Heading]]`) resolve to the block created from that heading, since headings become block boundaries.
 - Unresolvable wikilinks are preserved as plain text with a warning.
 
@@ -52,7 +51,7 @@ Obsidian frontmatter fields not recognized by PortableNote (tags, aliases, csscl
 
 ## What This Enables
 
-- **Obsidian's page links become block links.** Every `[[Page Name]]` is a graph edge. Every `[[Page Name#Heading]]` is also a graph edge, to a specific block rather than an anchor in a monolith.
+- **Obsidian's page links become block-reference links.** Every `[[Page Name]]` becomes `[Block Name](block:uuid)` and a graph edge. Every `[[Page Name#Heading]]` becomes a link to a specific block rather than an anchor in a monolith.
 - **Heading sections become composable blocks.** A section written under one document can appear in another without copy-paste. The graph tracks the relationship.
 - **Documents remain navigable.** The reconstructed documents preserve the original reading order. Non-technical users see familiar structure. Power users see the graph.
 - **Richer editing.** Blocks can be reordered, moved between documents, or split further. The graph adapts. The original Obsidian structure is a starting point, not a prison.

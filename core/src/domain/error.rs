@@ -28,6 +28,7 @@ pub enum ViolationDetails {
     InvalidEdgeEndpoint {
         edge_id: Uuid,
     },
+    /// Legacy; no longer emitted (footer dropped in favour of inline links only).
     MissingFooterAnnotation {
         block_id: Uuid,
         referenced_name: String,
@@ -60,6 +61,8 @@ pub enum ViolationDetails {
     },
     /// Block name contains `[` or `]`, reserved for reference syntax.
     NameContainsReservedCharacters { block_id: Uuid, name: String },
+    /// Block name contains `%`, reserved (ambiguous with percent-encoding in filenames).
+    NameContainsPercent { block_id: Uuid, name: String },
 }
 
 /// Domain errors for command execution.
@@ -79,6 +82,9 @@ pub enum DomainError {
 
     #[error("Block name must not contain '[' or ']' (reserved for reference syntax)")]
     NameContainsReservedCharacters,
+
+    #[error("Block name must not contain '%' (reserved for filename encoding)")]
+    NameContainsPercent,
 
     #[error("Name '{0}' is already in use by block {1}")]
     NameConflict(String, Uuid),

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
+use portablenote_core::application::block_file;
 use portablenote_core::application::ports::{BlockStore, DocumentStore, GraphStore, NameIndex};
 use portablenote_core::domain::types::{Block, Document, Edge};
 
@@ -37,11 +38,10 @@ impl BlockStore for InMemoryBlockStore {
         self.blocks.values().cloned().collect()
     }
 
-    fn find_by_ref(&self, name: &str) -> Vec<Block> {
-        let pattern = format!("[[{name}]]");
+    fn find_by_target(&self, target_block_id: Uuid) -> Vec<Block> {
         self.blocks
             .values()
-            .filter(|b| b.content.contains(&pattern))
+            .filter(|b| block_file::content_references_block(&b.content, target_block_id))
             .cloned()
             .collect()
     }

@@ -1,17 +1,17 @@
 use uuid::Uuid;
 
+use crate::application::block_file;
 use crate::application::ports::{BlockStore, Clock, GraphStore};
 use crate::application::results::{CommandResult, VaultWrite};
-use crate::domain::blocks;
 use crate::domain::error::DomainError;
 use crate::domain::events::BlockDeleted;
+use crate::domain::types::Block;
 
 /// Delete a block, rejected if it has incoming edges.
 ///
-/// Outgoing edges and inline `[[wikilink]]` references in other blocks are
-/// cleaned up. Multi-store: returns a `CommandResult` with `SaveBlock` writes
-/// for reverted blocks, `RemoveEdge` for outgoing edges, `DeleteBlock`, and
-/// `RemoveName`.
+/// Outgoing edges and block-reference links to this block in other blocks are
+/// reverted to plain text. Multi-store: returns a `CommandResult` with `SaveBlock` writes
+/// for reverted blocks, `RemoveEdge` for outgoing edges, `DeleteBlock`, and `RemoveName`.
 pub fn execute(
     block_store: &dyn BlockStore,
     graph: &dyn GraphStore,
@@ -27,9 +27,21 @@ pub fn execute(
         return Err(DomainError::HasIncomingEdges(block_id, incoming.len()));
     }
 
-    let referencing = block_store.find_by_ref(&block.name);
-    let (reverted_blocks, inline_refs_reverted) =
-        blocks::revert_refs(referencing, &block.name, block_id, clock.now());
+    let referencing = block_store.find_by_target(block_id);
+    let now = clock.now();
+    let mut inline_refs_reverted = 0usize;
+    let reverted_blocks: Vec<Block> = referencing
+        .into_iter()
+        .map(|mut b| {
+            let (new_content, count) = block_file::revert_refs_in_content(&b.content, block_id);
+            if count > 0 {
+                inline_refs_reverted += count;
+                b.content = new_content;
+                b.modified = now;
+            }
+            b
+        })
+        .collect();
 
     let outgoing = graph.edges_for(block_id);
 
@@ -86,7 +98,7 @@ mod tests {
 
         blocks.expect_get().with(eq(id())).return_once(move |_| Some(make_block(id(), "Alpha")));
         graph.expect_incoming().with(eq(id())).return_once(|_| vec![]);
-        blocks.expect_find_by_ref().with(eq("Alpha")).return_once(|_| vec![]);
+        blocks.expect_find_by_target().with(eq(id())).return_once(|_| vec![]);
         graph.expect_edges_for().with(eq(id())).return_once(|_| vec![]);
 
         let result = execute(&blocks, &graph, &clock, id()).unwrap();
@@ -104,7 +116,7 @@ mod tests {
 
         blocks.expect_get().with(eq(id())).return_once(move |_| Some(make_block(id(), "Alpha")));
         graph.expect_incoming().with(eq(id())).return_once(|_| vec![]);
-        blocks.expect_find_by_ref().with(eq("Alpha")).return_once(|_| vec![]);
+        blocks.expect_find_by_target().with(eq(id())).return_once(|_| vec![]);
         graph.expect_edges_for().with(eq(id())).return_once(move |_| {
             vec![Edge { id: edge_id(), source: id(), target: other() }]
         });

@@ -1,5 +1,5 @@
 {
-  "description": "DeleteBlock(cascade): delete 'Getting Started', removes incoming edge, reverts [[Getting Started]] to plain text in referencing block",
+  "description": "DeleteBlock(cascade): delete 'Getting Started', removes incoming edge, reverts block-reference link to plain text in referencing block",
   "initial_vault": "../valid/with-refs",
   "command": {
     "type": "DeleteBlock",
@@ -30,17 +30,12 @@
       {
         "type": "block_content_not_contains",
         "block_id": "20000000-0000-4000-a000-000000000001",
-        "text": "[[Getting Started]]"
+        "text": "[Getting Started](block:20000000-0000-4000-a000-000000000002)"
       },
       {
         "type": "block_content_contains",
         "block_id": "20000000-0000-4000-a000-000000000001",
         "text": "Getting Started"
-      },
-      {
-        "type": "block_footer_not_contains",
-        "block_id": "20000000-0000-4000-a000-000000000001",
-        "name": "Getting Started"
       },
       {
         "type": "event_emitted",

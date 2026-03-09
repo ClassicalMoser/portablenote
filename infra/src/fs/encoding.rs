@@ -12,6 +12,7 @@ fn must_encode(c: char) -> bool {
 /// Per the spec: RFC 3986 percent-encoding over filesystem-unsafe characters,
 /// control characters, and the percent literal. All other characters — including
 /// spaces, unicode, and common punctuation — pass through unmodified.
+/// Block names containing `%` are rejected at command time; they never reach here.
 ///
 /// Truncates to `MAX_FILENAME_BYTES` (200 bytes UTF-8). Names exceeding this
 /// after encoding are truncated at a character boundary.

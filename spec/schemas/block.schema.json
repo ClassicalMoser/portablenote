@@ -15,7 +15,7 @@
     "name": {
       "type": "string",
       "minLength": 1,
-      "description": "Human-readable name. Vault-wide unique (case-insensitive). The linking handle for wikilink syntax."
+      "description": "Human-readable name. Vault-wide unique (case-insensitive). Used as display text in block-reference links."
     },
     "content": {
       "type": "string",

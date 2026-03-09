@@ -33,13 +33,13 @@ The use case reads through port traits, calls pure domain functions, and returns
 
 ## Domain Layer (`domain/`)
 
-Everything here is pure. Functions take owned or borrowed domain types and return domain types or `Result<_, DomainError>`. No `dyn`, no trait objects, no I/O.
+Everything here is pure. Functions take owned or borrowed domain types and return domain types or `Result<_, DomainError>`. No `dyn`, no trait objects, no I/O. This layer implements the **spec’s domain-level definitions**: vault state (blocks, graph, documents, manifest checksum chain), invariants (§6), checksum computation, and the mutation gate rule (allow vs StaleState vs RemediationRequired). The spec’s commit model (base, pending diff, rebase, overlap) is defined at domain level in the spec; rebase/overlap logic is not yet implemented in this crate.
 
 | Module | Responsibility |
 |---|---|
 | `types` | Entity structs: `Block`, `Edge`, `Document`, `Manifest`, `BlockGraph`, `Vault`. `Vault` is a read-only snapshot for validation/import, not the unit of command execution. |
 | `blocks` | Pure constructors and transforms: `create`, `apply_rename`, `apply_content`, `propagate_rename`, `revert_refs`. |
-| `content` | Markdown content helpers: heading detection, inline ref extraction, footer annotation parsing, rename/revert propagation. |
+| `content` | Markdown content helpers: heading detection. (Block-reference link parsing lives in application `block_file`.) |
 | `documents` | Document projection (`project`) — walks a `Document` definition and collects the referenced blocks in render order. |
 | `edges` | Edge construction. |
 | `commands` | Command data structs. Carry payload only — no behavior. |
@@ -59,7 +59,7 @@ Interfaces that infrastructure adapters implement. Defined here so use cases can
 
 | Trait | Purpose |
 |---|---|
-| `BlockStore` | Read/write access to the block heap. `get`, `list`, `find_by_ref`, `save`, `delete`. |
+| `BlockStore` | Read/write access to the block heap. `get`, `list`, `find_by_target`, `save`, `delete`. |
 | `GraphStore` | Read/write access to the reference graph. `get_edge`, `incoming`, `edges_for`, `save_edge`, `remove_edges`. |
 | `DocumentStore` | Read/write access to document definitions. `get`, `save`, `delete`. |
 | `NameIndex` | Human-readable name → UUID resolution. `resolve`, `set`, `remove`. |
@@ -194,6 +194,48 @@ The core is a library crate. It has no knowledge of transport, UI framework, or 
 - **CLI / other** — Any binary that depends on `portablenote-core` and wires up adapters.
 
 Tauri is one way to build a desktop client. It is not required by the spec and not the only option.
+
+---
+
+## Consuming the core from TypeScript / TSX
+
+Goal: a **simple, stable, compliant API** that a TS/TSX app can call without caring whether the core runs in the same process (WASM), in a desktop shell (Tauri), or on a server (HTTP).
+
+### One API surface, multiple delivery mechanisms
+
+Define a single, serializable contract that all delivery mechanisms implement:
+
+- **Input:** vault snapshot (JSON) + command (JSON). The vault is the full in-memory state (manifest, blocks, graph, documents, names); the host is responsible for loading it (from disk, fetch, or in-memory).
+- **Output:** `{ writes: VaultWrite[], event: <event> }` or a rejection with a stable error code/message. All types already have `serde::Serialize` / `Deserialize` in the core.
+
+The TS layer then only ever does: pass vault + command in, get writes + event (or error) back, and applies writes however it wants (persist to disk, send to server, update local state). No Rust types leak; no I/O in the core call.
+
+### Recommended delivery for “easy TS consumption”
+
+| Mechanism | Best for | How TS consumes |
+|-----------|----------|------------------|
+| **WebAssembly (WASM)** | Browser, Node, or “one binary” shared logic | `import { execute, validate, computeChecksum } from 'portablenote-wasm'` (or similar). Same package works in browser and Node. No server required; offline-first. |
+| **Tauri** | Desktop app (TS frontend + Rust process) | No WASM in the frontend. Expose Tauri commands that mirror the same API (e.g. `invoke('execute', { vault, command })`). Core runs as a Rust library; TS gets the same JSON-in/JSON-out contract over IPC. |
+| **HTTP** | Server-backed app (vault on server) | TS does `fetch('/api/execute', { body: JSON.stringify({ command }) })`. Server loads vault from disk, runs core, applies writes, returns result. Easiest integration; no Rust or WASM in the TS bundle. |
+
+**Recommendation:** Use **WASM** as the primary path for a single, stable TS API when you want the same logic in browser and Node with one dependency. Use **Tauri** when the client is a desktop app (same core, no WASM; expose the same logical API as Tauri commands). Use **HTTP** when the vault lives on a server and the frontend is a thin client.
+
+### What the core needs for a “driver” API
+
+The use cases today take **ports** (e.g. `BlockStore`, `GraphStore`). To expose a single “execute(vault, command)” style API (for WASM, or for a small server that holds no persistent state between calls), you need a **driver** that:
+
+1. Takes a `Vault` snapshot and a command (e.g. “AddBlock” with payload).
+2. Builds **in-memory stores** from the vault (same pattern as `core/tests/support/factory::from_vault`).
+3. Runs the appropriate use case against those stores (and a clock).
+4. Returns the `CommandResult` (writes + event) or `DomainError`, all serializable.
+
+So: either move or re-export the in-memory store implementations so they are part of the library (not only test code), and add a small **driver** module (in core or in a dedicated crate such as `portablenote-api` or `portablenote-wasm`) that exposes a handful of functions:
+
+- `execute(vault: Vault, command: Command) -> Result<CommandResult, DomainError>`
+- `validate(vault: Vault) -> Vec<Violation>`
+- `compute_checksum(vault: Vault) -> String`
+
+For WASM, that driver is compiled to WASM; the host (TS) passes vault and command as JSON (or typed structs that serialize to the same shape). No file I/O inside WASM — the host is responsible for persistence. For Tauri, the same driver runs in Rust; the Tauri command layer calls it and returns the serialized result to the frontend. Same contract, same compliance; only the delivery mechanism changes.
 
 ---
 

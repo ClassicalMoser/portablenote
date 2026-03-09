@@ -102,24 +102,44 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             match command {
                 Command::Add { name, content } => {
                     session.add_block(&name, &content)?;
+                    println!("added block: {name}");
                 }
                 Command::List => {
-                    session.list_blocks();
+                    let blocks = session.list_blocks();
+                    if blocks.is_empty() {
+                        println!("no blocks in vault");
+                    } else {
+                        for block in &blocks {
+                            let preview: String = block
+                                .content
+                                .chars()
+                                .take(60)
+                                .collect::<String>()
+                                .replace('\n', " ");
+                            println!("  {} {} {}", block.id, block.name, preview);
+                        }
+                        println!("{} block(s)", blocks.len());
+                    }
                 }
                 Command::Rename { id, name } => {
                     session.rename_block(id, &name)?;
+                    println!("renamed block {id} → {name}");
                 }
                 Command::Edit { id, content } => {
                     session.mutate_content(id, &content)?;
+                    println!("updated content for block {id}");
                 }
                 Command::Delete { id, cascade } => {
                     session.delete_block(id, cascade)?;
+                    println!("deleted block {id}");
                 }
                 Command::Link { source, target } => {
                     session.add_edge(source, target)?;
+                    println!("added edge {source} → {target}");
                 }
                 Command::Unlink { id } => {
                     session.remove_edge(id)?;
+                    println!("removed edge {id}");
                 }
                 Command::Init { .. } => unreachable!(),
             }

@@ -1,0 +1,17 @@
+{
+  "description": "AddBlock: rejected with StaleState when client base checksum does not match current vault (commit model §5)",
+  "initial_vault": "../valid/minimal",
+  "client_base_checksum": "sha256:stale_expected",
+  "command": {
+    "type": "AddBlock",
+    "payload": {
+      "id": "10000000-0000-4000-a000-000000000099",
+      "name": "New Block",
+      "content": "Content."
+    }
+  },
+  "expected": {
+    "result": "rejected",
+    "error": "StaleState"
+  }
+}

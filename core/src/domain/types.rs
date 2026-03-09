@@ -9,7 +9,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub id: Uuid,
-    /// Human-readable name — vault-wide unique, used in `[[wikilink]]` syntax.
+    /// Human-readable name — vault-wide unique, used as display text in block-reference links.
     pub name: String,
     /// Markdown body. Must not contain heading syntax outside fenced code blocks.
     pub content: String,
@@ -71,6 +71,10 @@ pub struct BlockGraph {
     pub edges: Vec<Edge>,
 }
 
+/// Block-reference links extracted from block content: (display text, target block UUID).
+/// Populated at vault load from application layer (extract_block_refs). Used for validation.
+pub type BlockRefs = Vec<(String, Uuid)>;
+
 /// Read-only snapshot of a fully loaded vault.
 ///
 /// Used for full-state validation (`invariants::validate_vault`) and checksum
@@ -85,6 +89,9 @@ pub struct Vault {
     /// Name-to-UUID index. Peer artifact to the graph and documents,
     /// loaded from `names.json` rather than the manifest.
     pub names: HashMap<String, Uuid>,
+    /// Block-reference links per block: block_id → [(display_text, target_uuid)].
+    /// Populated when building the vault (application layer extracts from content).
+    pub block_refs: HashMap<Uuid, BlockRefs>,
     /// Monotonically increasing in-memory mutation counter.
     /// Bumped by every aggregate method. Reset to 0 on load.
     pub version: u64,

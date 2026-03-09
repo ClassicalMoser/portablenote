@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use portablenote_core::application::block_file;
 use portablenote_core::application::gate;
 use portablenote_core::application::ports::{BlockStore, ManifestStore, MutationGate};
 use portablenote_core::domain::error::DomainError;
@@ -30,6 +31,10 @@ impl FsMutationGate<'_> {
             .into_iter()
             .map(|b| (b.id, b))
             .collect();
+        let block_refs: HashMap<_, _> = blocks
+            .values()
+            .map(|b| (b.id, block_file::extract_block_refs(&b.content)))
+            .collect();
         let graph = self.graph.as_block_graph().clone();
         let documents = self.documents.all_documents().clone();
         let names = self.names.all_names().clone();
@@ -39,6 +44,7 @@ impl FsMutationGate<'_> {
             graph,
             documents,
             names,
+            block_refs,
             version: 0,
         })
     }

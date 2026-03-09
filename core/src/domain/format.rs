@@ -211,7 +211,7 @@ mod tests {
 
     fn block_file_with_refs() -> String {
         format!(
-            "<!--\nid: {BLOCK_ID}\nname: Core Concepts\ncreated: 2026-03-01T00:00:00Z\nmodified: 2026-03-01T00:00:00Z\n-->\n\nSee [[Getting Started]] for context.\n\n<!-- refs -->\n[Getting Started]: uuid:20000000-0000-4000-a000-000000000002\n"
+            "<!--\nid: {BLOCK_ID}\nname: Core Concepts\ncreated: 2026-03-01T00:00:00Z\nmodified: 2026-03-01T00:00:00Z\n-->\n\nSee [Getting Started](block:20000000-0000-4000-a000-000000000002) for context.\n"
         )
     }
 
@@ -275,15 +275,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_block_with_footer_annotations() {
+    fn parse_block_with_block_ref_links() {
         let raw = block_file_with_refs();
         let block = parse_block_file(&raw).unwrap();
         assert_eq!(block.name, "Core Concepts");
-        assert!(block.content.contains("[[Getting Started]]"));
-        assert!(block.content.contains("<!-- refs -->"));
         assert!(block
             .content
-            .contains("[Getting Started]: uuid:20000000-0000-4000-a000-000000000002"));
+            .contains("[Getting Started](block:20000000-0000-4000-a000-000000000002)"));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 {
-  "description": "RenameBlock: rename 'Getting Started' to 'Quick Start', verify propagation to inline refs and footer annotations in referencing blocks",
+  "description": "RenameBlock: rename 'Getting Started' to 'Quick Start', verify propagation to block-reference links in referencing blocks",
   "initial_vault": "../valid/with-refs",
   "command": {
     "type": "RenameBlock",
@@ -28,18 +28,12 @@
       {
         "type": "block_content_contains",
         "block_id": "20000000-0000-4000-a000-000000000001",
-        "text": "[[Quick Start]]"
+        "text": "[Quick Start](block:20000000-0000-4000-a000-000000000002)"
       },
       {
         "type": "block_content_not_contains",
         "block_id": "20000000-0000-4000-a000-000000000001",
-        "text": "[[Getting Started]]"
-      },
-      {
-        "type": "block_footer_maps",
-        "block_id": "20000000-0000-4000-a000-000000000001",
-        "name": "Quick Start",
-        "target_uuid": "20000000-0000-4000-a000-000000000002"
+        "text": "[Getting Started](block:20000000-0000-4000-a000-000000000002)"
       },
       {
         "type": "edge_count",

@@ -1,0 +1,16 @@
+{
+  "description": "AddBlock: rejected when name contains percent (reserved for filename encoding)",
+  "initial_vault": "../valid/minimal",
+  "command": {
+    "type": "AddBlock",
+    "payload": {
+      "id": "10000000-0000-4000-a000-000000000099",
+      "name": "100% complete",
+      "content": "Content."
+    }
+  },
+  "expected": {
+    "result": "rejected",
+    "error": "'%'"
+  }
+}

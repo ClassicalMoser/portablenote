@@ -6,6 +6,7 @@
 
 use uuid::Uuid;
 
+use crate::application::block_file;
 use crate::application::results::VaultWrite;
 use crate::domain::checksum;
 use crate::domain::types::{Block, Document, Edge, Vault};
@@ -17,10 +18,13 @@ pub fn apply_writes_to_vault(vault: &Vault, writes: &[VaultWrite]) -> Vault {
     for w in writes {
         match w {
             VaultWrite::WriteBlock(block) => {
+                v.block_refs
+                    .insert(block.id, block_file::extract_block_refs(&block.content));
                 v.blocks.insert(block.id, block.clone());
             }
             VaultWrite::DeleteBlock(id) => {
                 v.blocks.remove(id);
+                v.block_refs.remove(id);
             }
             VaultWrite::WriteEdge(edge) => {
                 v.graph.edges.retain(|e| e.id != edge.id);
@@ -144,10 +148,21 @@ pub fn recovery_case(
     }
 }
 
+/// Result of deriving undo writes from a journal. `skipped` is the number of
+/// (entry, write) pairs that did not match (e.g. corrupt or mismatched journal).
+#[derive(Debug, Clone)]
+pub struct UndoOutcome {
+    pub writes: Vec<VaultWrite>,
+    pub skipped: usize,
+}
+
 /// Produce the writes that restore state from before_image (Case C undo).
+/// When `before_image` and `writes` are misaligned or entry/write kinds don't match,
+/// those pairs are skipped and `skipped` is incremented (caller should treat nonzero as corrupt journal).
 #[allow(clippy::manual_map)]
-pub fn undo_writes_from_journal(journal: &Journal) -> Vec<VaultWrite> {
+pub fn undo_writes_from_journal(journal: &Journal) -> UndoOutcome {
     let mut out = Vec::with_capacity(journal.before_image.len());
+    let mut skipped = 0;
     for (entry, write) in journal.before_image.iter().zip(journal.writes.iter()) {
         let undo = match (entry, write) {
             (BeforeImageEntry::Block { data }, VaultWrite::WriteBlock(block)) => {
@@ -173,13 +188,16 @@ pub fn undo_writes_from_journal(journal: &Journal) -> Vec<VaultWrite> {
             (BeforeImageEntry::Name { name, id }, VaultWrite::RemoveName(_)) => id
                 .as_ref()
                 .map(|id| VaultWrite::SetName { name: name.clone(), id: *id }),
-            _ => None,
+            _ => {
+                skipped += 1;
+                None
+            }
         };
         if let Some(w) = undo {
             out.push(w);
         }
     }
-    out
+    UndoOutcome { writes: out, skipped }
 }
 
 #[cfg(test)]
@@ -274,5 +292,62 @@ mod tests {
         assert_eq!(deserialized.expected_checksum, journal.expected_checksum);
         assert_eq!(deserialized.before_image.len(), 2);
         assert_eq!(deserialized.writes.len(), 2);
+    }
+
+    #[test]
+    fn undo_writes_from_journal_reports_skipped_on_mismatch() {
+        let block = Block {
+            id: test_uuid(1),
+            name: "A".to_string(),
+            content: "x".to_string(),
+            created: Utc::now(),
+            modified: Utc::now(),
+        };
+        let journal = Journal {
+            expected_checksum: "sha256:x".to_string(),
+            before_image: vec![
+                BeforeImageEntry::Block { data: None },
+                BeforeImageEntry::Name {
+                    name: "A".to_string(),
+                    id: None,
+                },
+                BeforeImageEntry::Edge { data: None },
+            ],
+            writes: vec![
+                VaultWrite::WriteBlock(block),
+                VaultWrite::SetName {
+                    name: "A".to_string(),
+                    id: test_uuid(1),
+                },
+                VaultWrite::RemoveEdge(test_uuid(2)),
+            ],
+        };
+        let out = undo_writes_from_journal(&journal);
+        assert_eq!(out.skipped, 0, "matching entry/write kinds should not be skipped");
+        assert_eq!(out.writes.len(), 2, "Block undo + Name undo (Edge None + RemoveEdge yields no write)");
+
+        let corrupt = Journal {
+            expected_checksum: "sha256:x".to_string(),
+            before_image: vec![
+                BeforeImageEntry::Block { data: None },
+                BeforeImageEntry::Block { data: None },
+            ],
+            writes: vec![
+                VaultWrite::WriteBlock(Block {
+                    id: test_uuid(1),
+                    name: "X".to_string(),
+                    content: "".to_string(),
+                    created: Utc::now(),
+                    modified: Utc::now(),
+                }),
+                VaultWrite::SetName {
+                    name: "Y".to_string(),
+                    id: test_uuid(2),
+                },
+            ],
+        };
+        let out_corrupt = undo_writes_from_journal(&corrupt);
+        assert_eq!(out_corrupt.skipped, 1, "Block vs SetName pair should be skipped");
+        assert_eq!(out_corrupt.writes.len(), 1);
     }
 }

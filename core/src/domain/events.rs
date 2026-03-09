@@ -10,7 +10,7 @@ pub struct BlockAdded {
     pub name: String,
 }
 
-/// Emitted after a block rename, including propagated `[[wikilink]]` updates.
+/// Emitted after a block rename, including propagated block-reference link updates.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockRenamed {
     pub block_id: Uuid,

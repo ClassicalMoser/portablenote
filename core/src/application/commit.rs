@@ -13,7 +13,13 @@ use crate::domain::types::Vault;
 pub fn write_manifest_after_writes(vault: &Vault, store: &dyn ManifestStore) {
     let new_checksum = checksum::compute(vault);
     let mut manifest = vault.manifest.clone();
-    manifest.previous_checksum = Some(manifest.checksum.clone());
+    // Chain: previous_checksum must always be set on commit (only null at genesis).
+    let old_checksum = manifest.checksum.clone();
+    manifest.previous_checksum = Some(old_checksum);
     manifest.checksum = new_checksum;
+    debug_assert!(
+        manifest.previous_checksum.is_some(),
+        "commit must never write previous_checksum: null"
+    );
     store.write(&manifest);
 }

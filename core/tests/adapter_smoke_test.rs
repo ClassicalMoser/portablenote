@@ -102,12 +102,12 @@ fn rename_block_propagates_refs() {
 
     let referrer = stores.blocks.get(core_concepts_id).unwrap();
     assert!(
-        referrer.content.contains("[[Quick Start]]"),
+        referrer.content.contains("[Quick Start](block:20000000-0000-4000-a000-000000000002)"),
         "inline ref should be updated: {}",
         referrer.content
     );
     assert!(
-        !referrer.content.contains("[[Getting Started]]"),
+        !referrer.content.contains("[Getting Started](block:20000000-0000-4000-a000-000000000002)"),
         "old ref should be gone: {}",
         referrer.content
     );

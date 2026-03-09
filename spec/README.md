@@ -48,6 +48,7 @@ Each `.json` file in `compliance/mutations/` has the following shape:
 {
   "description": "Human-readable description of the scenario",
   "initial_vault": "relative path to a vault directory in compliance/valid/ or compliance/invalid/",
+  "client_base_checksum": "optional: client's base checksum for the mutation gate (§5). If omitted, the runner uses the current vault manifest checksum (fast path). If set to a value that does not match the vault, the gate returns StaleState and the scenario may expect result: rejected.",
   "command": { "type": "AddBlock", "payload": { ... } },
   "expected": {
     "result": "success" | "rejected",

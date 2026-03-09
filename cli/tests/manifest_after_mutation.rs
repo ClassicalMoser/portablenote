@@ -3,8 +3,10 @@
 use std::process::Command;
 
 use portablenote_core::application::journal::{BeforeImageEntry, Journal};
+use portablenote_core::application::ports::MutationGate;
 use portablenote_core::application::results::VaultWrite;
 use portablenote_core::domain::checksum;
+use portablenote_core::domain::error::DomainError;
 use portablenote_core::domain::types::Block;
 use portablenote_infra::fs::{
     FsBlockStore, FsDocumentStore, FsGraphStore, FsJournalStore, FsManifestStore, FsMutationGate,
@@ -58,6 +60,48 @@ fn manifest_checksum_updated_after_add_block() {
     assert!(
         vault.manifest.previous_checksum.is_some(),
         "manifest.previous_checksum must be set after first mutation"
+    );
+}
+
+/// After two adds, manifest must form a chain: previous_checksum == checksum from after first add.
+#[test]
+fn manifest_checksum_chain_after_two_adds() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let vault_path = dir.path();
+
+    let out = pn().arg("init").arg(vault_path).output().unwrap();
+    assert!(out.status.success(), "init failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    // First add
+    let out = pn()
+        .arg("--vault")
+        .arg(vault_path)
+        .args(["add", "First", "--content", "one"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "first add failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let vault_after_first = load_vault(vault_path);
+    let checksum_after_first = vault_after_first.manifest.checksum.clone();
+    assert!(
+        vault_after_first.manifest.previous_checksum.is_some(),
+        "previous_checksum must be set after first add"
+    );
+
+    // Second add
+    let out = pn()
+        .arg("--vault")
+        .arg(vault_path)
+        .args(["add", "Second", "--content", "two"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "second add failed: {}", String::from_utf8_lossy(&out.stderr));
+
+    let vault_after_second = load_vault(vault_path);
+    assert_eq!(
+        vault_after_second.manifest.previous_checksum.as_deref(),
+        Some(checksum_after_first.as_str()),
+        "previous_checksum after second add must equal checksum after first add (chain)"
     );
 }
 
@@ -297,4 +341,62 @@ fn recovery_case_c_undoes_partial_writes() {
         recovered_checksum, manifest_checksum,
         "vault should be restored to pre-commit state after Case C undo"
     );
+
+    // Case C recovery should have rewritten the manifest (previous_checksum updated)
+    assert_eq!(
+        vault_recovered.manifest.checksum, manifest_checksum,
+        "manifest.checksum should match restored state"
+    );
+    assert!(
+        vault_recovered.manifest.previous_checksum.is_some(),
+        "manifest should be rewritten after Case C undo"
+    );
+}
+
+/// OCC gate: when expected_checksum is set and does not match current manifest.checksum,
+/// the gate returns StaleState. CLI currently calls allow_mutation(None); this test
+/// covers the StaleState path end-to-end through the FS adapter.
+#[test]
+fn mutation_gate_returns_stale_state_when_expected_checksum_mismatches() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let vault_path = dir.path();
+
+    let out = pn().arg("init").arg(vault_path).output().unwrap();
+    assert!(out.status.success());
+    let out = pn()
+        .arg("--vault")
+        .arg(vault_path)
+        .args(["add", "X", "--content", "y"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+
+    let vault = load_vault(vault_path);
+    let actual_checksum = vault.manifest.checksum.clone();
+    assert!(!actual_checksum.is_empty());
+
+    let pn_dir = vault_path.join("portablenote");
+    let blocks = FsBlockStore::open(pn_dir.join("blocks")).unwrap();
+    let graph = FsGraphStore::open(pn_dir.join("block-graph.json")).unwrap();
+    let documents = FsDocumentStore::open(pn_dir.join("documents")).unwrap();
+    let names = FsNameIndex::open(pn_dir.join("names.json")).unwrap();
+    let manifest = FsManifestStore::open(pn_dir.join("manifest.json"));
+
+    let gate = FsMutationGate {
+        blocks: &blocks,
+        graph: &graph,
+        documents: &documents,
+        names: &names,
+        manifest: &manifest,
+    };
+
+    let result = gate.allow_mutation(Some("sha256:stale_expected".to_string()));
+    let err = result.unwrap_err();
+    match &err {
+        DomainError::StaleState { expected, actual } => {
+            assert_eq!(expected.as_str(), "sha256:stale_expected");
+            assert_eq!(actual.as_str(), actual_checksum.as_str());
+        }
+        _ => panic!("expected StaleState, got {:?}", err),
+    }
 }

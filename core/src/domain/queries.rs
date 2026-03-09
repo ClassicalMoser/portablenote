@@ -98,6 +98,7 @@ mod tests {
             },
             documents: HashMap::new(),
             names: HashMap::new(),
+            block_refs: HashMap::new(),
             version: 0,
         }
     }
@@ -130,6 +131,7 @@ mod tests {
             },
             documents: HashMap::new(),
             names,
+            block_refs: HashMap::new(),
             version: 0,
         }
     }

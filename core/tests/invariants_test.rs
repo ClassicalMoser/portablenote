@@ -144,6 +144,31 @@ fn invalid_reserved_in_name_detected() {
 }
 
 #[test]
+fn invalid_percent_in_name_detected() {
+    let dir = common::spec_dir().join("valid").join("minimal");
+    let mut vault = common::load_vault(&dir);
+    let mut block = vault.blocks.values().next().cloned().expect("minimal has a block");
+    block.name = "100%".to_string();
+    let id = block.id;
+    vault.blocks.insert(block.id, block);
+    vault.names.clear();
+    vault.names.insert("100%".to_string(), id);
+
+    let violations = validate_vault(&vault);
+
+    assert!(!violations.is_empty(), "should detect % in block name");
+    let v = violations
+        .iter()
+        .find(|v| matches!(v.details, ViolationDetails::NameContainsPercent { .. }))
+        .expect("should have a NameContainsPercent violation");
+    assert!(
+        v.description.contains('%') || v.description.contains("percent") || v.description.contains("encoding"),
+        "description should mention %/percent/encoding: {}",
+        v.description
+    );
+}
+
+#[test]
 fn invalid_missing_metadata_detected() {
     let dir = common::spec_dir().join("invalid").join("missing-frontmatter");
     let vault = common::load_vault(&dir);

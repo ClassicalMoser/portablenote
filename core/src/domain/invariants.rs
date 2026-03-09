@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use uuid::Uuid;
 
+use super::blocks;
 use super::content;
 use super::error::{Violation, ViolationDetails};
 use super::types::Vault;
@@ -21,15 +22,14 @@ pub fn validate_vault(vault: &Vault) -> Vec<Violation> {
     check_edges_are_block_to_block(vault, &mut violations);
     check_document_block_refs(vault, &mut violations);
     check_document_acyclicity(vault, &mut violations);
-    check_inline_ref_annotations(vault, &mut violations);
-    check_footer_annotation_targets(vault, &mut violations);
+    check_block_ref_edges(vault, &mut violations);
     check_name_uniqueness(vault, &mut violations);
     check_no_headings_in_content(vault, &mut violations);
 
     violations
 }
 
-/// Every block must have a non-empty name and must not contain `[` or `]`.
+/// Every block must have a non-empty name, no `[` or `]`, and no `%`.
 fn check_block_metadata(vault: &Vault, violations: &mut Vec<Violation>) {
     for block in vault.blocks.values() {
         if block.name.is_empty() {
@@ -45,6 +45,15 @@ fn check_block_metadata(vault: &Vault, violations: &mut Vec<Violation>) {
             violations.push(Violation {
                 description: "Block name contains reserved character '[' or ']'".to_string(),
                 details: ViolationDetails::NameContainsReservedCharacters {
+                    block_id: block.id,
+                    name: block.name.clone(),
+                },
+            });
+        }
+        if blocks::name_contains_percent(&block.name) {
+            violations.push(Violation {
+                description: "Block name contains '%' (reserved for filename encoding)".to_string(),
+                details: ViolationDetails::NameContainsPercent {
                     block_id: block.id,
                     name: block.name.clone(),
                 },
@@ -169,9 +178,8 @@ fn check_document_acyclicity(vault: &Vault, violations: &mut Vec<Violation>) {
     }
 }
 
-/// Every `[[Name]]` inline reference must have a corresponding footer annotation
-/// and a corresponding edge in block-graph.json.
-fn check_inline_ref_annotations(vault: &Vault, violations: &mut Vec<Violation>) {
+/// Every block-reference link must have a corresponding edge and target must exist in heap.
+fn check_block_ref_edges(vault: &Vault, violations: &mut Vec<Violation>) {
     let edge_set: HashSet<(Uuid, Uuid)> = vault
         .graph
         .edges
@@ -179,59 +187,31 @@ fn check_inline_ref_annotations(vault: &Vault, violations: &mut Vec<Violation>) 
         .map(|e| (e.source, e.target))
         .collect();
 
-    for block in vault.blocks.values() {
-        let inline_refs = content::extract_inline_refs(&block.content);
-        let footer_map = content::extract_footer_annotations(&block.content);
-
-        for ref_name in &inline_refs {
-            if !footer_map.contains_key(ref_name.as_str()) {
+    for (block_id, refs) in &vault.block_refs {
+        for (display, target_id) in refs {
+            if !vault.blocks.contains_key(target_id) {
                 violations.push(Violation {
                     description: format!(
-                        "Inline reference [[{ref_name}]] has no footer annotation"
-                    ),
-                    details: ViolationDetails::MissingFooterAnnotation {
-                        block_id: block.id,
-                        referenced_name: ref_name.clone(),
-                    },
-                });
-                continue;
-            }
-
-            if let Some(target_id) = footer_map.get(ref_name.as_str()) {
-                if !edge_set.contains(&(block.id, *target_id)) {
-                    violations.push(Violation {
-                        description: format!(
-                            "Inline reference [[{ref_name}]] has no corresponding edge in block-graph.json"
-                        ),
-                        details: ViolationDetails::MissingEdgeForRef {
-                            block_id: block.id,
-                            referenced_name: ref_name.clone(),
-                            target_id: *target_id,
-                        },
-                    });
-                }
-            }
-        }
-    }
-}
-
-/// Every footer annotation must map to a name that resolves to an existing block.
-fn check_footer_annotation_targets(vault: &Vault, violations: &mut Vec<Violation>) {
-    for block in vault.blocks.values() {
-        let footer_map = content::extract_footer_annotations(&block.content);
-
-        for (name, target_id) in &footer_map {
-            let target_exists = vault.blocks.contains_key(target_id);
-            let name_resolves = vault.names.get(name.as_str()) == Some(target_id);
-
-            if !target_exists || !name_resolves {
-                violations.push(Violation {
-                    description: format!(
-                        "Footer annotation [{name}] does not resolve to an existing block"
+                        "Block reference [{}](block:{}) target does not exist in heap",
+                        display,
+                        target_id
                     ),
                     details: ViolationDetails::DanglingFooterAnnotation {
-                        block_id: block.id,
-                        name: name.clone(),
+                        block_id: *block_id,
+                        name: display.clone(),
+                    },
+                });
+            } else if !edge_set.contains(&(*block_id, *target_id)) {
+                violations.push(Violation {
+                    description: format!(
+                        "Block reference [{}](block:{}) has no corresponding edge in block-graph.json",
+                        display,
+                        target_id
+                    ),
+                    details: ViolationDetails::MissingEdgeForRef {
+                        block_id: *block_id,
+                        referenced_name: display.clone(),
+                        target_id: *target_id,
                     },
                 });
             }

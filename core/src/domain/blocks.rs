@@ -5,9 +5,14 @@ use super::content;
 use super::error::DomainError;
 use super::types::Block;
 
-/// Reserved for inline reference syntax `[[Name]]` and footer `[Name]: uuid:`.
+/// Reserved for CommonMark link syntax `[text](url)` (e.g. block-reference links).
 fn name_has_reserved_characters(name: &str) -> bool {
     name.contains('[') || name.contains(']')
+}
+
+/// Percent is disallowed in block names (ambiguous with percent-encoding in filenames).
+pub fn name_contains_percent(name: &str) -> bool {
+    name.contains('%')
 }
 
 /// Create a new block, enforcing the no-heading and non-empty-name invariants.
@@ -23,6 +28,9 @@ pub fn create(
     }
     if name_has_reserved_characters(name) {
         return Err(DomainError::NameContainsReservedCharacters);
+    }
+    if name_contains_percent(name) {
+        return Err(DomainError::NameContainsPercent);
     }
     if content::find_heading_outside_fence(content_str).is_some() {
         return Err(DomainError::HeadingInContent);
@@ -48,6 +56,9 @@ pub fn apply_rename(
     if name_has_reserved_characters(new_name) {
         return Err(DomainError::NameContainsReservedCharacters);
     }
+    if name_contains_percent(new_name) {
+        return Err(DomainError::NameContainsPercent);
+    }
     block.name = new_name.to_string();
     block.modified = now;
     Ok(block)
@@ -67,66 +78,14 @@ pub fn apply_content(
     Ok(block)
 }
 
-/// Propagate a rename through a set of referencing blocks.
-/// Returns `(updated_blocks, total_inline_refs_updated)`. Time is passed in for `modified`.
-pub fn propagate_rename(
-    blocks: Vec<Block>,
-    old_name: &str,
-    new_name: &str,
-    now: DateTime<Utc>,
-) -> (Vec<Block>, usize) {
-    let mut total = 0;
-    let updated = blocks
-        .into_iter()
-        .map(|mut block| {
-            let (new_content, count) = content::rename_reference(&block.content, old_name, new_name);
-            if count > 0 {
-                block.content = new_content;
-                block.modified = now;
-                total += count;
-            }
-            block
-        })
-        .collect();
-    (updated, total)
-}
-
-/// Revert inline references to a deleted block back to plain text.
-/// Returns `(updated_blocks, total_inline_refs_reverted)`. Time is passed in for `modified`.
-pub fn revert_refs(
-    blocks: Vec<Block>,
-    name: &str,
-    target_uuid: Uuid,
-    now: DateTime<Utc>,
-) -> (Vec<Block>, usize) {
-    let mut total = 0;
-    let updated = blocks
-        .into_iter()
-        .map(|mut b| {
-            let (new_content, count) = content::revert_reference(&b.content, name, target_uuid);
-            if count > 0 {
-                b.content = new_content;
-                b.modified = now;
-                total += count;
-            }
-            b
-        })
-        .collect();
-    (updated, total)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const ID: &str = "00000000-0000-4000-a000-000000000001";
-    const OTHER: &str = "00000000-0000-4000-a000-000000000002";
 
     fn id() -> Uuid {
         Uuid::parse_str(ID).unwrap()
-    }
-    fn other() -> Uuid {
-        Uuid::parse_str(OTHER).unwrap()
     }
     fn now() -> DateTime<Utc> {
         Utc::now()
@@ -155,6 +114,18 @@ mod tests {
         assert!(matches!(
             create(id(), "Block[Name", "content", now()),
             Err(DomainError::NameContainsReservedCharacters)
+        ));
+    }
+
+    #[test]
+    fn create_name_with_percent_is_error() {
+        assert!(matches!(
+            create(id(), "100%", "content", now()),
+            Err(DomainError::NameContainsPercent)
+        ));
+        assert!(matches!(
+            create(id(), "Half % complete", "content", now()),
+            Err(DomainError::NameContainsPercent)
         ));
     }
 
@@ -198,6 +169,15 @@ mod tests {
     }
 
     #[test]
+    fn apply_rename_percent_is_error() {
+        let block = create(id(), "Alpha", "content", now()).unwrap();
+        assert!(matches!(
+            apply_rename(block, "Done 100%", now()),
+            Err(DomainError::NameContainsPercent)
+        ));
+    }
+
+    #[test]
     fn apply_content_updates_content() {
         let block = create(id(), "Alpha", "old", now()).unwrap();
         let updated = apply_content(block, "new content", now()).unwrap();
@@ -213,39 +193,4 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn propagate_rename_updates_refs() {
-        let b1 = create(id(), "Referrer", "See [[Alpha]].\n\n<!-- refs -->\n[Alpha]: uuid:00000000-0000-4000-a000-000000000002\n", now()).unwrap();
-        let (updated, count) = propagate_rename(vec![b1], "Alpha", "Beta", now());
-        assert_eq!(count, 1);
-        assert!(updated[0].content.contains("[[Beta]]"));
-    }
-
-    #[test]
-    fn propagate_rename_no_match_unchanged() {
-        let b = create(id(), "NoRef", "plain text", now()).unwrap();
-        let (updated, count) = propagate_rename(vec![b], "Alpha", "Beta", now());
-        assert_eq!(count, 0);
-        assert_eq!(updated[0].content, "plain text");
-    }
-
-    #[test]
-    fn revert_refs_removes_link_syntax() {
-        let content = format!(
-            "See [[Alpha]] here.\n\n<!-- refs -->\n[Alpha]: uuid:{OTHER}\n"
-        );
-        let b = create(id(), "Referrer", &content, now()).unwrap();
-        let (updated, count) = revert_refs(vec![b], "Alpha", other(), now());
-        assert_eq!(count, 1);
-        assert!(updated[0].content.contains("See Alpha here."));
-        assert!(!updated[0].content.contains("[[Alpha]]"));
-    }
-
-    #[test]
-    fn revert_refs_no_match_unchanged() {
-        let b = create(id(), "NoRef", "plain text", now()).unwrap();
-        let (updated, count) = revert_refs(vec![b], "Alpha", other(), now());
-        assert_eq!(count, 0);
-        assert_eq!(updated[0].content, "plain text");
-    }
 }

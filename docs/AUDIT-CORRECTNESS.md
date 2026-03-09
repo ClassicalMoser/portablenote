@@ -5,6 +5,45 @@
 
 ---
 
+## Does the spec accurately reflect the code?
+
+**Short answer:** Mostly. The spec matches the core and infra on manifest, checksum, mutation gate, commit protocol, recovery, commands, and invariants. It **does not** match in one area (commit model); name and long-filename spec text has been corrected to match the implementation. **Always sending `expected_checksum: None` is a serious violation**; spec/compliance tests should catch it (see below). Details: (1) **commit model and rebase** — spec describes base + pending, fast/slow path, rebase on non-overlap; the implementation has none of that. (2) **Name rules** — spec now matches: name required on creation, reject on conflict (no auto-suffix). (3) **Long filenames** — spec says truncation is “disambiguated with a numeric suffix (2)”; the implementation truncates to 200 bytes at a character boundary but does not add a suffix or disambiguate.
+
+### Where the spec matches the implementation
+
+
+| Spec                                                                                                                           | Implementation                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Manifest schema, checksum + previous_checksum                                                                                  | `Manifest`, `checksum::compute`, `is_drifted`; manifest write on commit            |
+| Checksum canonical order (blocks → edges → documents), NFC/LF normalization                                                    | `domain/checksum.rs` matches §1                                                    |
+| names.json excluded from checksum; updated on Add/Rename/Delete                                                                | Journal and commit path; names not in checksum                                     |
+| Mutation gate: checksum match → allow; mismatch → full validation; violations → block; optional expected_checksum → StaleState | `gate::mutation_gate`, `MutationGate` port; infra builds vault and calls gate      |
+| Commit protocol §5a: journal → apply writes → manifest → delete journal                                                        | `commit_with_journal` in CLI                                                       |
+| Recovery Cases A/B/C, journal format, before_image (including Name entries)                                                    | `journal::recovery_case`, `undo_writes_from_journal`; Case C error if skipped > 0  |
+| Block metadata (id, name, created, modified) in HTML comment; no heading in content                                            | `domain/format` parse/serialize; `blocks::create` / `apply_content` reject heading |
+| Block filename: percent-encode per spec; metadata authoritative; fix on next write                                             | `infra/fs/encoding.rs`; block store uses encode; Rule 9 in spec                    |
+| Name rules: no `[` `]` or `%`; case-insensitive uniqueness                                                                     | Domain + NameIndex `resolve_ignore_case`; add/rename reject                        |
+| Commands (AddBlock, RenameBlock, DeleteBlockSafe/Cascade, etc.) and validations                                                | Use cases in `application/use_cases/`; domain commands and errors                  |
+| §6 Domain invariants (edges, documents, acyclicity, block refs, name uniqueness, no heading)                                   | `invariants::validate_vault` covers all eight                                      |
+| Rename propagates to inline refs; delete reverts refs; cascade updates documents                                               | `blocks::propagate_rename`, `revert_refs`; `delete_block_cascade` use case         |
+
+
+### Where the spec does not match the implementation
+
+
+| Spec says                                                                                                                                                                                                   | Code does                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **§5 Commit model and rebase:** Client keeps base + pending diff; fast path (checksum match → commit); slow path (diff, non-overlapping → rebase then atomic commit; overlapping → reject).                 | No base or pending diff. No diff/rebase/overlap logic. **Gate always called with `None`** — serious violation. Atomic commit only. See §2.4.                                             |
+| **§2 Name rules:** *(spec corrected: name required, reject on conflict; no longer a mismatch)* “On creation, `name` defaults to the first line of the block's content, truncated to 120 characters.” “On collision, a numeric suffix is appended automatically: `Getting Started (2)`.” | Caller supplies `name` to `add_block`. No default from first line, no 120 truncation, no automatic suffix; name conflict returns `NameConflict` (reject). |
+| **§2 Filename length:** “Names that exceed this after encoding are truncated and disambiguated with a numeric suffix: `Very Long Name That Exceeds... (2).md`.”                                             | `encode_block_filename` truncates to 200 bytes at a character boundary; no suffix and no disambiguation when two names truncate to the same string.       |
+
+
+**Spec corrections made (no longer mismatches):** (1) Name rules — spec now says name is **required on creation** (caller supplies it) and **reject on conflict** (no auto-suffix). Import collision handling is out of scope. (2) Long filenames — spec now says truncation at 200 bytes; disambiguation may be defined in a future revision.
+
+**Commit model: serious violation and compliance gap.** Always passing `expected_checksum: None` to the mutation gate when committing means the implementation never performs OCC and never triggers the slow path (rebase or reject). That violates §5. **Spec/compliance tests should catch this:** e.g. a scenario that asserts the commit path uses the vault's current manifest checksum as `expected_checksum` when invoking the gate, or a scenario that expects `StaleState` when the client's base does not match the remote manifest. Implementing the full commit model (base + pending, pass base to gate, rebase on non-overlap) will require a deep-dive; adding a compliance test that fails when the implementation always sends `None` is a first step.
+
+---
+
 ## 1. Critical correctness issues
 
 ### 1.1 Case-insensitive name uniqueness not enforced at command time — DONE
@@ -21,7 +60,7 @@
 
 **Spec (§5a Recovery):** For Case C (partial writes), the spec currently mandates undo: restore from `before_image`, verify checksum, rewrite manifest, delete journal, emit warning.
 
-**Implementation:** We apply undo and delete the journal. We do not recompute/verify after undo, rewrite manifest, or emit a warning.
+**Implementation (updated):** We apply undo; if any journal (entry, write) pairs are skipped (corrupt/mismatched), we return an error. We then rebuild vault from disk, verify computed checksum equals pre-crash manifest checksum, rewrite manifest via `commit_manifest`, and delete the journal. `undo_writes_from_journal` now returns `UndoOutcome { writes, skipped }`; when `skipped > 0` recovery fails with an error instead of silently applying a partial undo.
 
 **Design note:** Undo is not the only option. We have the journal (writes + before_image + expected_checksum), so we could **reattempt** the commit (re-apply writes, then manifest, then delete journal), possibly with backoff; if reattempt fails, then fall back to **undo with warning**. The spec guarantees **directory state** (vault is consistent after recovery) more than it guarantees a specific behavior (undo vs reattempt). So recovery strategy can be implementation-defined as long as the resulting state is correct. Our current "undo only" is one valid choice; adding reattempt-with-backoff then undo-with-warning would be a reasonable extension. Spec could be relaxed to allow implementation-defined recovery (reattempt and/or undo) as long as the final state matches manifest.
 
@@ -29,38 +68,52 @@
 
 ## 2. Spec–implementation gaps (interop / load-time)
 
-### 2.1 Checksum normalization (§1)
+### 2.1 Checksum normalization (§1) — DONE
 
 **Spec:** Canonical checksum uses: UUIDs lowercase hyphenated; name and string fields UTF-8, NFC-normalized; line endings in content LF only (`\r\n` normalized to `\n` on write).
 
-**Implementation:**
+**Implementation (updated):**
+
 - **UUIDs:** Rust `Uuid` `Display` is already lowercase hyphenated. OK.
-- **NFC:** We do not NFC-normalize block names or content before hashing. Different implementations may produce different checksums for equivalent logical content.
-- **Line endings:** We do not normalize `\r\n` → `\n` when writing block content. Stored content is hashed as-is; spec says `\r\n` in stored content is a format violation and should be normalized on write.
+- **NFC:** `checksum::compute` NFC-normalizes block name and content before hashing. `format::serialize_block_file` NFC-normalizes name and LF-normalizes content on write; parse defensively normalizes on read. `add_block` and `rename_block` NFC-normalize input names.
+- **Line endings:** Content is LF-normalized in checksum and on write; CRLF/LF produce the same checksum.
 
-**Missing tests:** The suite does not assert that checksum is stable under NFC normalization or under LF normalization of content. We need **critical tests** that verify: (1) same logical content in NFC form produces the same checksum; (2) content with `\r\n` normalized to `\n` produces the expected checksum (or that we normalize on write and hashing is consistent). Without these, normalization bugs or interop drift are easy to miss.
-
-**Fix:** (1) Add compliance or unit tests for NFC and LF normalization vs checksum. (2) Implement normalization (NFC and LF on write / in checksum) so behavior matches spec.
+**Tests:** Unit tests in `checksum` and `format` for NFC/LF stability; compliance covered.
 
 ---
 
-### 2.2 Filename vs metadata: when to correct (§6 Load-Time Rules)
+### 2.2 Filename vs metadata: when to correct (§6 Load-Time Rules) — DONE
 
-**Spec (Rule 9) as written:** "Mismatched filenames are corrected **on open**."
-
-**Assessment:** That is the wrong place. Metadata is authoritative; the implementation should **fix the filename on mutation** (when we write a block, we always write to `encode(block.name) + extension`). So any prior mismatch is corrected the next time that block is saved. Correcting on open is unnecessary and pushes logic into the load path. **Checksum** should guard against tampering: if someone renames a file on disk without changing metadata, the next checksum run will show drift and the mutation gate (or load-time check) will surface it. So: fix on **mutation** (current behavior is correct); use **checksum** to guard tampering; **spec should be updated** to say "mismatched filenames are corrected on next write of that block (metadata is authoritative)" rather than "corrected on open."
+**Spec (Rule 9) updated:** Mismatched filenames are corrected **on the next write** of that block (not on open). Metadata is authoritative; checksum guards tampering. Spec text revised accordingly.
 
 ---
 
-### 2.3 Journal before_image format for Name (§5a)
+### 2.3 Journal before_image format for Name (§5a) — DONE
 
 **Spec:** Name entries in `before_image`: `{ "kind": "Name", "name": "...", "id": "uuid-v4" }` at top level (no `data` wrapper).
 
-**Implementation:** `BeforeImageEntry::Name { name, id }` with `#[serde(tag = "kind", content = "data")]` serializes as `{"kind": "Name", "data": {"name": "...", "id": ...}}`.
+**Implementation (updated):** `BeforeImageEntry` uses `#[serde(tag = "kind")]` with struct variants; Name serializes with flat `name`/`id` at top level. Round-trip tests added for journal (including Name entries).
 
-**Effect:** Our journal is self-consistent and recovery works. Another implementation that reads our journal might expect top-level `name` and `id` and fail or misparse.
+---
 
-**Fix:** Custom serialize/deserialize for the Name variant so the on-disk shape matches the spec (top-level `kind`, `name`, `id`).
+### 2.4 Commit model and rebase (§5) — GAP
+
+**Spec (§5 Commit model and rebase):** Client maintains **current base** (vault checksum last read/committed) and **pending diff** (writes to apply). Fast path: if `manifest.checksum` equals client base → apply pending writes via commit protocol. Slow path: if checksum differs → **diff** client base vs current remote; **non-overlapping** → **rebase** (recompute write set on top of current remote), then apply via atomic commit; **overlapping** → reject and surface for manual reconciliation.
+
+**Implementation (current):**
+
+
+| Spec requirement                                         | Code                                                                                                                                                                                    |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client base + pending diff in memory                     | **No.** CLI does not track a “base” checksum or hold a pending diff across operations. Each command loads vault from disk, runs use case, gets writes, commits.                         |
+| Pass base checksum into gate (fast path check)           | **No.** `VaultSession::require_gate()` always calls `gate.allow_mutation(None)`. OCC is only exercised in test (`mutation_gate_returns_stale_state_when_expected_checksum_mismatches`). |
+| On checksum mismatch: diff base vs remote, overlap check | **No.** No logic to compare client base to current remote or to classify overlapping vs non-overlapping mutations.                                                                      |
+| Rebase (recompute writes on top of current remote)       | **No.** No rebase step.                                                                                                                                                                 |
+| Reject + surface on overlap                              | **Partial.** `StaleState` exists and could be surfaced if the CLI ever passed `Some(expected_checksum)`; no overlap-specific handling.                                                  |
+| Atomic commit protocol after apply                       | **Yes.** `commit_with_journal` uses journal → apply writes → write manifest → delete journal.                                                                                           |
+
+
+**Summary:** Atomic commit (§5a) is implemented. The **commit model and rebase** (base + pending, fast/slow path, diff/rebase/reject) is **not** implemented. Acceptable for single-writer / local-only usage; required for multi-client or sync scenarios that must conform to §5.
 
 ---
 
@@ -76,15 +129,11 @@
 
 ---
 
-### 3.2 DeleteBlockCascade and documents
+### 3.2 DeleteBlockCascade and documents — DONE
 
-**Spec (§5 DeleteBlockCascade):** “Delete block. Removes all incoming and outgoing edges. Reverts all inline `[[Name]]` references… Removes corresponding footer annotations. Emits warning with counts.” It does not explicitly say documents are updated.
+**Spec (§5 DeleteBlockCascade) updated:** Cascade removes the block from every document that references it: removes the section or subsection; if the block is a document root, deletes that document. Spec and ARCHITECTURE updated.
 
-**Implementation:** We do not remove the deleted block from any document’s root/sections/subsections. Documents can end up with dangling block UUIDs.
-
-**Effect:** `check_document_block_refs` then reports violations; mutation gate blocks until the user fixes or removes the document. So behavior is “remediate,” not automatic document update.
-
-**Assessment:** Arguably a design choice. If the spec is read as “documents are views; we don’t auto-edit them,” leaving dangling refs and requiring remediation is consistent. If the spec is read as “cascade should leave no dangling refs,” we’d need to emit document updates (e.g. remove section/subsection or drop doc) when the root or a section block is deleted. Worth clarifying in the spec and/or adding a note in ARCHITECTURE.
+**Implementation (updated):** `delete_block_cascade` takes `DocumentStore`, lists documents, and uses domain helpers `remove_block_from_document` / `remove_subsection` to emit `WriteDocument` or `DeleteDocument` writes so no dangling refs remain.
 
 ---
 
@@ -93,8 +142,9 @@
 - **Commit order (§5a):** Write journal → apply writes → write manifest → delete journal. Implemented in CLI `commit_with_journal`.
 - **Recovery A/B:** Case A (rewrite manifest, delete journal) and Case B (delete journal) implemented and tested.
 - **Mutation gate (§5):** Checksum match → allow; mismatch → full validation; violations → block. Gate and `RemediationRequired` behavior match spec.
+- **Optimistic concurrency (replacing base_version):** The manifest’s checksum chain (`checksum`, `previous_checksum`) is the state identity. `MutationGate::allow_mutation(expected_checksum)` accepts an optional `expected_checksum`; when set, the gate allows only if `vault.manifest.checksum == expected_checksum`, otherwise returns `StaleState`. Clients send the `checksum` they last read (after a commit that value becomes `previous_checksum`). No separate “base version” field on commands; the checksum serves that role. CLI still calls with `None`; core and integration tests cover `StaleState` when a stale checksum is passed.
 - **Reserved characters in names:** `[` and `]` rejected in domain and in invariants.
-- **Invariants (§6):** All eight domain invariants and the documented load-time rule (checksum/mutation gate) are implemented: edge endpoints, document refs, acyclicity (no duplicate block in hierarchy), inline ref + footer + edge consistency, footer targets, name uniqueness (case-insensitive in validation), no headings outside fenced code.
+- **Invariants (§6):** All domain invariants and the documented load-time rule (checksum/mutation gate) are implemented: edge endpoints, document refs, acyclicity (no duplicate block in hierarchy), block-reference link + edge consistency (every `[text](block:uuid)` has matching edge and target in heap), name uniqueness (case-insensitive in validation), no headings outside fenced code.
 - **Document acyclicity:** “No block is its own ancestor” implemented as “no block appears more than once in root/sections/subsections”; matches the spec’s structure.
 - **delete_block_safe:** Uses `incoming(block_id)` to reject; only removes edges where `source == block_id` in practice (because incoming is empty when we proceed). Behavior correct.
 - **Checksum structure:** Blocks, edges, documents order and format match spec; timestamps excluded; `names.json` excluded.
@@ -103,56 +153,64 @@
 
 ## 5. Compliance suite gaps (missing cases)
 
-The suite has **26 mutation scenarios** (up from 20 after Phase 1+2) and several **invalid fixtures** (load-time validation). Remaining gaps:
+The suite has **26 mutation scenarios** (up from 20 after Phase 1+2) and several **invalid fixtures** (load-time validation). Gaps below are closed unless marked optional.
 
 ### Mutation scenarios (command → expected result + assertions)
 
-| Gap | Scenario idea | Status |
-|-----|----------------|--------|
-| ~~Case-insensitive name~~ | `add-block-duplicate-name-case-insensitive.json` | **Done** (Phase 1) |
-| ~~Case-insensitive rename~~ | `rename-block-duplicate-name-case-insensitive.json` | **Done** (Phase 1) |
-| ~~Reserved characters~~ | `add-block-reserved-bracket.json`, `rename-block-reserved-bracket.json` | **Done** (Phase 2) |
-| ~~Encoding round-trip~~ | `add-block-special-chars.json` | **Done** (Phase 2) |
-| **Long name truncation** | AddBlock with name >200 bytes (after encoding) → success | Open |
-| ~~AppendSection duplicate~~ | `append-section.json`, `append-section-duplicate-root.json` | **Done** (Phase 2) |
-| ~~Manifest after mutation~~ | CLI integration test only (documented decision) | **Done** (Phase 2) |
+
+| Gap                         | Scenario idea                                                           | Status                                                                               |
+| --------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| ~~Case-insensitive name~~   | `add-block-duplicate-name-case-insensitive.json`                        | **Done** (Phase 1)                                                                   |
+| ~~Case-insensitive rename~~ | `rename-block-duplicate-name-case-insensitive.json`                     | **Done** (Phase 1)                                                                   |
+| ~~Reserved characters~~     | `add-block-reserved-bracket.json`, `rename-block-reserved-bracket.json` | **Done** (Phase 2)                                                                   |
+| ~~Encoding round-trip~~     | `add-block-special-chars.json`                                          | **Done** (Phase 2) — percent-encoding for filenames; `%` in names rejected outright. |
+| **Long name truncation**    | AddBlock with name >200 bytes (after encoding) → success                | Open                                                                                 |
+| ~~Commit model / expected_checksum~~ | CLI passes `base_checksum` to gate; harness passes current manifest checksum (or scenario `client_base_checksum`). `add-block-stale-state.json` expects rejected with StaleState when base ≠ vault. | **Done** — CLI fixed; spec scenario + harness gate |
+| ~~AppendSection duplicate~~ | `append-section.json`, `append-section-duplicate-root.json`             | **Done** (Phase 2)                                                                   |
+| ~~Manifest after mutation~~ | CLI integration test only (documented decision)                         | **Done** (Phase 2)                                                                   |
+
 
 ### Checksum / normalization (unit or compliance)
 
-| Gap | What to test |
-|-----|--------------|
-| **NFC** | Same logical content in NFC form produces same checksum; or names/content normalized to NFC before checksum. |
-| **LF** | Content with `\r\n` normalized to `\n` (on write or in checksum) produces expected/stable checksum. |
+
+| Gap     | What to test                                                     | Status             |
+| ------- | ---------------------------------------------------------------- | ------------------ |
+| ~~NFC~~ | Same logical content in NFC form produces same checksum.         | **Done** (Phase 3) |
+| ~~LF~~  | Content with `\r\n` normalized to `\n` produces stable checksum. | **Done** (Phase 3) |
+
 
 ### Invalid fixtures (load-time validation)
 
-Existing: `duplicate-name`, `bad-checksum`, `dangling-uuid`, `duplicate-uuid`, `heading-in-block`, `missing-frontmatter`. Potentially missing or worth adding:
+Existing: `duplicate-name`, `bad-checksum`, `dangling-uuid`, `duplicate-uuid`, `heading-in-block`, `missing-frontmatter`. Added:
 
-- **Reserved in name:** vault with a block whose name contains `[` or `]` → expected violation.
-- **NFC / LF** (if we add normalization): fixtures that are invalid until normalized, or that document expected behavior.
+- **Reserved in name** — DONE: `reserved-in-name` fixture; block name contains `[` or `]` → expected violation; `invalid_reserved_in_name_detected` in invariants test.
 
 ### Recovery / journal
 
-- **Case A** (writes landed, manifest lost): scenario or integration test that leaves journal + applied writes, no manifest write, then "open" and assert manifest restored and journal deleted.
-- **Case C** (partial writes): scenario that leaves journal + partial writes, then "open" and assert undo applied and vault consistent (and optionally warning).
-- **Journal format**: round-trip serialization of journal (including Name entries) if we care about interop.
+- **Case A** — DONE: CLI integration test `recovery_case_a_rewrites_manifest_when_writes_landed`.
+- **Case C** — DONE: CLI integration test `recovery_case_c_undoes_partial_writes`.
+- **Journal format** — DONE: Round-trip tests for journal (including Name entries) in core.
 
 ### Summary
 
-After Phase 1+2, the mutation scenario gaps are mostly closed. Remaining: **long name truncation** (optional), **normalization tests** for checksum (NFC + LF), **invalid fixtures** (reserved-in-name), and **recovery/journal** integration tests (Case A, C, journal format). The harness and assertion types are in good shape.
+Phases 1–4 and the main Phase 5 items are done. Remaining **optional**: long name truncation scenario (AddBlock name >200 bytes after encoding → success). Harness and assertion types in good shape.
 
 ---
 
 ## 6. Summary
 
-| Category              | Count | Status |
-|-----------------------|-------|--------|
-| Critical correctness | 1     | **Done** — case-insensitive name at command time (1.1) |
-| Recovery Case C      | —     | Open — spec could allow reattempt-then-undo; implementation-defined strategy |
-| Spec/interop gaps    | 3     | Open — NFC + LF normalization (+ tests); spec fix for filename (fix on mutation); journal Name format |
-| Softer gaps          | 2     | 1 done (AppendSection ancestor 3.1); 1 open (cascade vs. documents 3.2) |
 
-**Next:** Phase 3 (checksum normalization, journal format, spec Rule 9 edit), then Phase 4 (recovery hardening, cascade decision).
+| Category                   | Status                                                                                                                                                      |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Critical correctness (1.1) | **Done** — case-insensitive name at command time                                                                                                            |
+| Recovery Case C            | **Done** — undo on partial writes; error if journal corrupt (skipped undo steps). Design note: reattempt-then-undo remains implementation-defined optional. |
+| Spec/interop (2.1–2.3)     | **Done** — NFC + LF normalization (+ tests); spec Rule 9 (fix on next write); journal Name format + round-trip                                              |
+| Softer gaps (3.1, 3.2)     | **Done** — AppendSection ancestor check; cascade updates documents (remove section/subsection or delete doc)                                                |
+| Recovery tests (Case A/C)  | **Done** — CLI integration tests                                                                                                                            |
+| Invalid fixtures           | **Done** — reserved-in-name added                                                                                                                           |
+
+
+**Remaining (optional):** Long name truncation scenario; suite coverage doc/README if desired.
 
 ---
 
@@ -160,54 +218,38 @@ After Phase 1+2, the mutation scenario gaps are mostly closed. Remaining: **long
 
 ### Phase 1 — Critical correctness (block non-conforming state) — DONE
 
-1. **Case-insensitive name at command time (1.1)** — Implemented.  
-   - `NameIndex::resolve_ignore_case(name) -> Option<(String, Uuid)>` added; implemented in `InMemoryNameIndex` and `FsNameIndex`.  
-   - `add_block` and `rename_block` use it; unit tests and compliance scenarios added.
+1. **Case-insensitive name at command time (1.1)** — Implemented.
+  - `NameIndex::resolve_ignore_case(name) -> Option<(String, Uuid)>` added; implemented in `InMemoryNameIndex` and `FsNameIndex`.  
+  - `add_block` and `rename_block` use it; unit tests and compliance scenarios added.
 
 ### Phase 2 — Compliance coverage (lock in behavior) — DONE
 
-2. **Reserved characters in names** — Implemented.  
-   - `add-block-reserved-bracket.json`, `rename-block-reserved-bracket.json` (expect rejected). Domain already rejected; no code change.
+1. **Reserved characters in names** — Implemented.
+  - `add-block-reserved-bracket.json`, `rename-block-reserved-bracket.json` (expect rejected). Domain already rejected; no code change.
+2. **Encoding and long names** — Implemented.
+  - `add-block-special-chars.json`: AddBlock name `"Notes: Part 1"` → success + `block_name_is` assertion.
+3. **AppendSection ancestor (3.1)** — Implemented.
+  - `DomainError::BlockAlreadyInDocument(Uuid)`; `append_section` checks before calling domain.  
+  - `append-section.json` (block already subsection → rejected), `append-section-duplicate-root.json` (block is root → rejected).
+4. **Manifest after mutation** — Documented
+  - **Decision:** Keep as CLI integration test only (`manifest_checksum_updated_after_add_block`). Adding a compliance assertion type would require the harness to compute checksums and pull domain logic into the test runner. The CLI test covers the commit protocol end-to-end.  
+  - No new compliance scenario added.
 
-3. **Encoding and long names** — Implemented.  
-   - `add-block-special-chars.json`: AddBlock name `"Notes: Part 1"` → success + `block_name_is` assertion.
+### Phase 3 — Spec alignment and interop — DONE
 
-4. **AppendSection ancestor (3.1)** — Implemented.  
-   - `DomainError::BlockAlreadyInDocument(Uuid)`; `append_section` checks before calling domain.  
-   - `append-section.json` (block already subsection → rejected), `append-section-duplicate-root.json` (block is root → rejected).
+1. **Checksum normalization (2.1)** — Unit tests and implementation: NFC/LF in `checksum::compute` and format serialize/parse; add_block/rename_block NFC-normalize names.
+2. **Journal Name format (2.3)** — `BeforeImageEntry` serializes Name with top-level `kind`, `name`, `id`; round-trip tests added.
+3. **Spec change: Rule 9 (2.2)** — Spec updated: correct on next write; checksum guards tampering.
 
-5. **Manifest after mutation** — Documented  
-   - **Decision:** Keep as CLI integration test only (`manifest_checksum_updated_after_add_block`). Adding a compliance assertion type would require the harness to compute checksums and pull domain logic into the test runner. The CLI test covers the commit protocol end-to-end.  
-   - No new compliance scenario added.
+### Phase 4 — Recovery and cascade — DONE
 
-### Phase 3 — Spec alignment and interop
+1. **Recovery Case A / C** — CLI integration tests: `recovery_case_a_rewrites_manifest_when_writes_landed`, `recovery_case_c_undoes_partial_writes`.
+2. **Cascade and documents (3.2)** — Cascade updates documents (remove section/subsection or delete doc); spec and ARCHITECTURE updated; use case and domain helpers implemented.
 
-6. **Checksum normalization (2.1)**  
-   - Add unit tests: NFC-normalized name/content → same checksum; content with `\r\n` → LF normalization → stable checksum.  
-   - Implement: normalize to NFC and LF (on write and/or in `checksum::compute`) per §1.
+### Phase 5 — Cleanup and docs — DONE (optional items open)
 
-7. **Journal Name format (2.3)**  
-   - Custom serialize/deserialize for `BeforeImageEntry::Name` so JSON has top-level `kind`, `name`, `id` (no `data` wrapper).  
-   - Add round-trip test for journal (including Name).
+1. **Invalid fixtures**
+  — `reserved-in-name` fixture and `invalid_reserved_in_name_detected` test added.  
+    **Optional:** Long name truncation scenario; suite coverage README.
 
-8. **Spec change: Rule 9 (2.2)**  
-   - Propose spec edit: “Mismatched filenames are corrected on **next write** of that block (metadata is authoritative). Checksum guards tampering.”  
-   - Remove or reword “corrected on open.”
-
-### Phase 4 — Recovery and optional hardening
-
-9. **Recovery Case A / C**  
-   - Add integration test(s): leave journal + state (Case A: writes applied, no manifest; Case C: partial writes), open vault, assert recovery outcome and journal deleted.  
-   - Optional: implement reattempt-with-backoff then undo-with-warning; document as implementation-defined.
-
-10. **Cascade and documents (3.2)**  
-    - Decide: remediate-only vs auto-update documents when root/section is deleted.  
-    - Clarify in spec and/or ARCHITECTURE; if auto-update, implement and add scenario.
-
-### Phase 5 — Cleanup and docs
-
-11. **Invalid fixtures and suite docs**  
-    - Add any missing invalid fixtures (e.g. reserved-in-name) noted in §5.  
-    - Update spec/compliance README or audit with “what the suite covers” and how to add scenarios.
-
-**Dependencies:** Phase 1 first (correctness). Phase 2 can be parallelized after 1. Phase 3 (normalization, journal format) feeds interop. Phase 4 is optional hardening. Phase 5 is ongoing.
+**Status:** Phases 1–5 complete for correctness and interop. Optional: long name truncation scenario, suite coverage doc.
